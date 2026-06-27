@@ -1,4 +1,5 @@
 mod find_replace;
+mod prefix_suffix;
 
 use std::path::PathBuf;
 
@@ -86,8 +87,8 @@ impl RenameRule {
             Self::FindReplace { find, replace } => {
                 find_replace::apply_find_replace(find, replace, ctx)
             }
-            Self::Prefix(p) => Ok(format!("{}{}", p, ctx.stem)),
-            Self::Suffix(s) => Ok(format!("{}{}", ctx.stem, s)),
+            Self::Prefix(p) => prefix_suffix::apply_prefix(p, ctx),
+            Self::Suffix(s) => prefix_suffix::apply_suffix(s, ctx),
             Self::RemoveText(text) => Ok(ctx.stem.replace(text, "")),
             Self::CaseTransform(case) => Ok(transform_case(&ctx.stem, *case)),
             Self::NumberSequence {
@@ -168,20 +169,6 @@ mod tests {
                 created: None,
             },
         }
-    }
-
-    #[test]
-    fn prefix() {
-        let rule = RenameRule::Prefix("vacation_".into());
-        let ctx = make_ctx("beach", "jpg");
-        assert_eq!(rule.apply(&ctx).unwrap(), "vacation_beach");
-    }
-
-    #[test]
-    fn suffix() {
-        let rule = RenameRule::Suffix("_final".into());
-        let ctx = make_ctx("report", "pdf");
-        assert_eq!(rule.apply(&ctx).unwrap(), "report_final");
     }
 
     #[test]
