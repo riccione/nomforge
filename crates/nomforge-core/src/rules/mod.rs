@@ -1,3 +1,5 @@
+mod find_replace;
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -81,7 +83,9 @@ impl RenameRule {
     /// The extension is preserved separately and reattached by the engine.
     pub fn apply(&self, ctx: &RenameContext) -> Result<String> {
         match self {
-            Self::FindReplace { find, replace } => Ok(ctx.stem.replace(find, replace)),
+            Self::FindReplace { find, replace } => {
+                find_replace::apply_find_replace(find, replace, ctx)
+            }
             Self::Prefix(p) => Ok(format!("{}{}", p, ctx.stem)),
             Self::Suffix(s) => Ok(format!("{}{}", ctx.stem, s)),
             Self::RemoveText(text) => Ok(ctx.stem.replace(text, "")),
@@ -164,16 +168,6 @@ mod tests {
                 created: None,
             },
         }
-    }
-
-    #[test]
-    fn find_replace() {
-        let rule = RenameRule::FindReplace {
-            find: "DSC".into(),
-            replace: "photo".into(),
-        };
-        let ctx = make_ctx("DSC_001", "jpg");
-        assert_eq!(rule.apply(&ctx).unwrap(), "photo_001");
     }
 
     #[test]
