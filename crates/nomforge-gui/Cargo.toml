@@ -1,0 +1,16 @@
+[package]
+name = "nomforge-gui"
+version = "0.1.0"
+edition = "2024"
+description = "GUI for nomforge bulk file renamer"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "nomforge-gui"
+path = "src/main.rs"
+
+[dependencies]
+nomforge-core = { path = "../nomforge-core" }
+eframe = "0.35"
+rfd = "0.17"
+anyhow = "1"
