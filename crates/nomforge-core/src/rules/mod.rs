@@ -1,3 +1,4 @@
+mod case_transform;
 mod find_replace;
 mod prefix_suffix;
 
@@ -90,7 +91,7 @@ impl RenameRule {
             Self::Prefix(p) => prefix_suffix::apply_prefix(p, ctx),
             Self::Suffix(s) => prefix_suffix::apply_suffix(s, ctx),
             Self::RemoveText(text) => Ok(ctx.stem.replace(text, "")),
-            Self::CaseTransform(case) => Ok(transform_case(&ctx.stem, *case)),
+            Self::CaseTransform(case) => case_transform::apply_case_transform(&ctx.stem, *case),
             Self::NumberSequence {
                 start,
                 padding,
@@ -125,33 +126,6 @@ impl RenameRule {
     }
 }
 
-fn transform_case(s: &str, case: Case) -> String {
-    match case {
-        Case::Upper => s.to_uppercase(),
-        Case::Lower => s.to_lowercase(),
-        Case::Title => {
-            let mut result = String::with_capacity(s.len());
-            let mut capitalize_next = true;
-            for c in s.chars() {
-                if c.is_alphanumeric() {
-                    if capitalize_next {
-                        for upper in c.to_uppercase() {
-                            result.push(upper);
-                        }
-                        capitalize_next = false;
-                    } else {
-                        result.push(c);
-                    }
-                } else {
-                    result.push(c);
-                    capitalize_next = true;
-                }
-            }
-            result
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,27 +150,6 @@ mod tests {
         let rule = RenameRule::RemoveText(" ".into());
         let ctx = make_ctx("hello world", "txt");
         assert_eq!(rule.apply(&ctx).unwrap(), "helloworld");
-    }
-
-    #[test]
-    fn case_upper() {
-        let rule = RenameRule::CaseTransform(Case::Upper);
-        let ctx = make_ctx("hello", "txt");
-        assert_eq!(rule.apply(&ctx).unwrap(), "HELLO");
-    }
-
-    #[test]
-    fn case_lower() {
-        let rule = RenameRule::CaseTransform(Case::Lower);
-        let ctx = make_ctx("HELLO", "txt");
-        assert_eq!(rule.apply(&ctx).unwrap(), "hello");
-    }
-
-    #[test]
-    fn case_title() {
-        let rule = RenameRule::CaseTransform(Case::Title);
-        let ctx = make_ctx("hello world", "txt");
-        assert_eq!(rule.apply(&ctx).unwrap(), "Hello World");
     }
 
     #[test]
