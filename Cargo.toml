@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/nomforge-core",
+    "crates/nomforge-cli",
+    "crates/nomforge-gui",
+]
