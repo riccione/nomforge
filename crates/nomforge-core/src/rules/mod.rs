@@ -50,10 +50,7 @@ pub enum SeqPosition {
 #[serde(tag = "type")]
 pub enum RenameRule {
     /// Plain text find & replace (no regex).
-    FindReplace {
-        find: String,
-        replace: String,
-    },
+    FindReplace { find: String, replace: String },
     /// Prepend text to filename stem.
     Prefix(String),
     /// Append text to filename stem.
@@ -69,9 +66,7 @@ pub enum RenameRule {
         position: SeqPosition,
     },
     /// Keep or change the file extension.
-    ChangeExtension {
-        new_ext: Option<String>,
-    },
+    ChangeExtension { new_ext: Option<String> },
     /// Regex-based find & replace.
     RegexReplace {
         pattern: String,
@@ -109,7 +104,10 @@ impl RenameRule {
                 // Return stem unchanged.
                 Ok(ctx.stem.clone())
             }
-            Self::RegexReplace { pattern, replacement } => {
+            Self::RegexReplace {
+                pattern,
+                replacement,
+            } => {
                 let re = regex::Regex::new(pattern).map_err(|e| {
                     crate::error::NomforgeError::InvalidRegex {
                         pattern: pattern.clone(),
