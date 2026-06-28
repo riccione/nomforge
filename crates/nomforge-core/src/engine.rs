@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::error::{NomforgeError, Result};
@@ -18,20 +17,6 @@ pub struct RenameResult {
     pub target: PathBuf,
     pub success: bool,
     pub error: Option<String>,
-}
-
-/// A conflict detected between two rename plans.
-#[derive(Debug, Clone)]
-pub struct Conflict {
-    pub plan_a: usize,
-    pub plan_b: usize,
-    pub reason: ConflictReason,
-}
-
-#[derive(Debug, Clone)]
-pub enum ConflictReason {
-    SameTarget(PathBuf),
-    TargetExists(PathBuf),
 }
 
 /// The rename engine: generates plans and applies renames.
@@ -177,40 +162,6 @@ impl RenameEngine {
             },
         }
     }
-}
-
-/// Detect conflicts between rename plans.
-pub fn detect_conflicts(plans: &[RenamePlan]) -> Vec<Conflict> {
-    let mut conflicts = Vec::new();
-    let mut seen_targets: HashSet<&PathBuf> = HashSet::new();
-
-    for (i, plan_a) in plans.iter().enumerate() {
-        // Check if target already exists on disk (and is different from source)
-        if plan_a.source != plan_a.target && plan_a.target.exists() {
-            conflicts.push(Conflict {
-                plan_a: i,
-                plan_b: i,
-                reason: ConflictReason::TargetExists(plan_a.target.clone()),
-            });
-        }
-
-        // Check for duplicate targets
-        if !seen_targets.insert(&plan_a.target) {
-            // Find the other plan with the same target
-            for (j, plan_b) in plans.iter().enumerate() {
-                if j < i && plan_a.target == plan_b.target {
-                    conflicts.push(Conflict {
-                        plan_a: j,
-                        plan_b: i,
-                        reason: ConflictReason::SameTarget(plan_a.target.clone()),
-                    });
-                    break;
-                }
-            }
-        }
-    }
-
-    conflicts
 }
 
 #[cfg(test)]
@@ -385,72 +336,5 @@ mod tests {
         assert!(tmp.join("file1.txt").exists());
 
         cleanup_test_dir(&tmp);
-    }
-
-    #[test]
-    fn conflict_same_target() {
-        let plans = vec![
-            RenamePlan {
-                source: PathBuf::from("/tmp/a.txt"),
-                target: PathBuf::from("/tmp/result.txt"),
-            },
-            RenamePlan {
-                source: PathBuf::from("/tmp/b.txt"),
-                target: PathBuf::from("/tmp/result.txt"),
-            },
-        ];
-
-        let conflicts = detect_conflicts(&plans);
-        assert_eq!(conflicts.len(), 1);
-        assert!(matches!(conflicts[0].reason, ConflictReason::SameTarget(_)));
-    }
-
-    #[test]
-    fn conflict_target_exists() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_conflict_exists");
-        fs::create_dir_all(&tmp).unwrap();
-        fs::write(tmp.join("existing.txt"), "content").unwrap();
-
-        let plans = vec![RenamePlan {
-            source: tmp.join("other.txt"),
-            target: tmp.join("existing.txt"),
-        }];
-
-        let conflicts = detect_conflicts(&plans);
-        assert_eq!(conflicts.len(), 1);
-        assert!(matches!(
-            conflicts[0].reason,
-            ConflictReason::TargetExists(_)
-        ));
-
-        cleanup_test_dir(&tmp);
-    }
-
-    #[test]
-    fn no_conflict_when_different_targets() {
-        let plans = vec![
-            RenamePlan {
-                source: PathBuf::from("/tmp/a.txt"),
-                target: PathBuf::from("/tmp/a_renamed.txt"),
-            },
-            RenamePlan {
-                source: PathBuf::from("/tmp/b.txt"),
-                target: PathBuf::from("/tmp/b_renamed.txt"),
-            },
-        ];
-
-        let conflicts = detect_conflicts(&plans);
-        assert!(conflicts.is_empty());
-    }
-
-    #[test]
-    fn no_conflict_when_source_equals_target() {
-        let plans = vec![RenamePlan {
-            source: PathBuf::from("/tmp/same.txt"),
-            target: PathBuf::from("/tmp/same.txt"),
-        }];
-
-        let conflicts = detect_conflicts(&plans);
-        assert!(conflicts.is_empty());
     }
 }
