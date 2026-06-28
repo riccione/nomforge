@@ -2,6 +2,7 @@ mod case_transform;
 mod counter;
 mod find_replace;
 mod prefix_suffix;
+mod remove_text;
 
 use std::path::PathBuf;
 
@@ -91,7 +92,7 @@ impl RenameRule {
             }
             Self::Prefix(p) => prefix_suffix::apply_prefix(p, ctx),
             Self::Suffix(s) => prefix_suffix::apply_suffix(s, ctx),
-            Self::RemoveText(text) => Ok(ctx.stem.replace(text, "")),
+            Self::RemoveText(text) => remove_text::apply_remove_text(text, ctx),
             Self::CaseTransform(case) => case_transform::apply_case_transform(&ctx.stem, *case),
             Self::NumberSequence {
                 start,
@@ -136,13 +137,6 @@ mod tests {
                 created: None,
             },
         }
-    }
-
-    #[test]
-    fn remove_text() {
-        let rule = RenameRule::RemoveText(" ".into());
-        let ctx = make_ctx("hello world", "txt");
-        assert_eq!(rule.apply(&ctx).unwrap(), "helloworld");
     }
 
     #[test]
