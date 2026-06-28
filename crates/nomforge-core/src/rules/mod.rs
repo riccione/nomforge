@@ -3,6 +3,7 @@ mod counter;
 mod extension;
 mod find_replace;
 mod prefix_suffix;
+mod regex_replace;
 mod remove_text;
 
 use std::path::PathBuf;
@@ -107,55 +108,7 @@ impl RenameRule {
             Self::RegexReplace {
                 pattern,
                 replacement,
-            } => {
-                let re = regex::Regex::new(pattern).map_err(|e| {
-                    crate::error::NomforgeError::InvalidRegex {
-                        pattern: pattern.clone(),
-                        reason: e.to_string(),
-                    }
-                })?;
-                Ok(re.replace(&ctx.stem, replacement.as_str()).into_owned())
-            }
+            } => regex_replace::apply_regex_replace(pattern, replacement, ctx),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_ctx(stem: &str, ext: &str) -> RenameContext {
-        RenameContext {
-            filename: format!("{}.{}", stem, ext),
-            stem: stem.to_string(),
-            extension: ext.to_string(),
-            parent_dir: PathBuf::from("/tmp"),
-            counter: 0,
-            metadata: FileMetadata {
-                size: 0,
-                modified: None,
-                created: None,
-            },
-        }
-    }
-
-    #[test]
-    fn regex_replace() {
-        let rule = RenameRule::RegexReplace {
-            pattern: r"(\d+)".into(),
-            replacement: "img_$1".into(),
-        };
-        let ctx = make_ctx("file_42", "jpg");
-        assert_eq!(rule.apply(&ctx).unwrap(), "file_img_42");
-    }
-
-    #[test]
-    fn regex_invalid_pattern() {
-        let rule = RenameRule::RegexReplace {
-            pattern: r"[".into(),
-            replacement: "x".into(),
-        };
-        let ctx = make_ctx("file", "txt");
-        assert!(rule.apply(&ctx).is_err());
     }
 }
