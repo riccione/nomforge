@@ -1,5 +1,6 @@
 mod case_transform;
 mod counter;
+mod extension;
 mod find_replace;
 mod prefix_suffix;
 mod remove_text;
@@ -99,9 +100,8 @@ impl RenameRule {
                 padding,
                 position,
             } => counter::apply_counter(*start, *padding, *position, ctx),
-            Self::ChangeExtension { new_ext: _ } => {
-                // Extension changes are handled by the engine, not on the stem.
-                // Return stem unchanged.
+            Self::ChangeExtension { new_ext } => {
+                extension::apply_extension(&ctx.extension, new_ext)?;
                 Ok(ctx.stem.clone())
             }
             Self::RegexReplace {
