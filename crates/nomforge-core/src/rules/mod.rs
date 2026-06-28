@@ -1,4 +1,5 @@
 mod case_transform;
+mod counter;
 mod find_replace;
 mod prefix_suffix;
 
@@ -96,15 +97,7 @@ impl RenameRule {
                 start,
                 padding,
                 position,
-            } => {
-                let num = start + ctx.counter;
-                let padded = format!("{:0>width$}", num, width = *padding);
-                Ok(match position {
-                    SeqPosition::Prefix => format!("{}{}", padded, ctx.stem),
-                    SeqPosition::Suffix => format!("{}{}", ctx.stem, padded),
-                    SeqPosition::ReplaceStem => padded,
-                })
-            }
+            } => counter::apply_counter(*start, *padding, *position, ctx),
             Self::ChangeExtension { new_ext: _ } => {
                 // Extension changes are handled by the engine, not on the stem.
                 // Return stem unchanged.
@@ -150,39 +143,6 @@ mod tests {
         let rule = RenameRule::RemoveText(" ".into());
         let ctx = make_ctx("hello world", "txt");
         assert_eq!(rule.apply(&ctx).unwrap(), "helloworld");
-    }
-
-    #[test]
-    fn counter_prefix() {
-        let rule = RenameRule::NumberSequence {
-            start: 1,
-            padding: 3,
-            position: SeqPosition::Prefix,
-        };
-        let ctx = make_ctx("photo", "jpg");
-        assert_eq!(rule.apply(&ctx).unwrap(), "001photo");
-    }
-
-    #[test]
-    fn counter_suffix() {
-        let rule = RenameRule::NumberSequence {
-            start: 10,
-            padding: 2,
-            position: SeqPosition::Suffix,
-        };
-        let ctx = make_ctx("photo", "jpg");
-        assert_eq!(rule.apply(&ctx).unwrap(), "photo10");
-    }
-
-    #[test]
-    fn counter_replace_stem() {
-        let rule = RenameRule::NumberSequence {
-            start: 5,
-            padding: 4,
-            position: SeqPosition::ReplaceStem,
-        };
-        let ctx = make_ctx("photo", "jpg");
-        assert_eq!(rule.apply(&ctx).unwrap(), "0005");
     }
 
     #[test]
