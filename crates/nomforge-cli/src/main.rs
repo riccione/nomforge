@@ -58,24 +58,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         args::Commands::Undo(args) => {
-            let history_path = args
-                .history_file
-                .as_deref()
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(nomforge_core::default_undo_log_path);
-
-            let count = nomforge_core::undo_count(&history_path)?;
-            if count == 0 {
-                println!("  No undo history found.");
-                return Ok(());
-            }
-
-            println!("  Undoing last batch ({} total batches)...", count);
-            let reverted = nomforge_core::revert_last(&history_path)?;
-            println!(
-                "  {}",
-                format!("Reverted {} file(s).", reverted).green().bold()
-            );
+            commands::undo::run(args)?;
         }
     }
 
