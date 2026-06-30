@@ -115,6 +115,21 @@ impl RenameEngine {
             parent_dir.join(format!("{}.{}", current_stem, final_ext))
         };
 
+        // Validate filename component length against OS limits.
+        // On Linux (ext4/XFS/Btrfs), the limit is 255 bytes per filename component.
+        // On macOS (APFS), it's 255 characters (NFD decomposed). On Windows (NTFS),
+        // it's 255 UTF-16 code units. We use 255 bytes as a conservative portable limit.
+        const MAX_FILENAME_BYTES: usize = 255;
+        if let Some(filename_os) = target.file_name() {
+            let filename_bytes = filename_os.len();
+            if filename_bytes > MAX_FILENAME_BYTES {
+                return Err(NomforgeError::FilenameTooLong {
+                    filename: filename_os.to_string_lossy().into_owned(),
+                    length: filename_bytes,
+                });
+            }
+        }
+
         Ok(RenamePlan {
             source: path.to_path_buf(),
             target,
@@ -334,6 +349,56 @@ mod tests {
 
         assert!(results[0].success);
         assert!(tmp.join("file1.txt").exists());
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_rejects_filename_too_long() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_long_name");
+        setup_test_dir(&tmp);
+
+        // Create a file with a long name (just under 255 bytes)
+        let long_name = "a".repeat(240);
+        fs::write(tmp.join(format!("{long_name}.txt")), "content").unwrap();
+
+        // Prefix that pushes it over 255 bytes
+        let engine = RenameEngine::new(vec![RenameRule::Prefix(
+            "very_long_prefix_that_makes_this_exceed_the_limit_".into(),
+        )]);
+        let files = vec![tmp.join(format!("{long_name}.txt"))];
+        let result = engine.plan(&files);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            crate::error::NomforgeError::FilenameTooLong { filename, length } => {
+                assert!(length > 255);
+                assert!(filename.len() > 255);
+            }
+            e => panic!("Expected FilenameTooLong, got: {e}"),
+        }
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_accepts_filename_at_limit() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_at_limit");
+        setup_test_dir(&tmp);
+
+        // Create a file whose target will be exactly 255 bytes
+        // "a" * 251 + ".txt" = 255 bytes total
+        let stem = "a".repeat(251);
+        fs::write(tmp.join(format!("{stem}.txt")), "content").unwrap();
+
+        let engine = RenameEngine::new(vec![]);
+        let files = vec![tmp.join(format!("{stem}.txt"))];
+        let plans = engine.plan(&files).unwrap();
+
+        assert_eq!(plans.len(), 1);
+        // Should succeed since "a".repeat(251) + ".txt" = 255 bytes
+        let target_name = plans[0].target.file_name().unwrap().to_str().unwrap();
+        assert_eq!(target_name.len(), 255);
 
         cleanup_test_dir(&tmp);
     }
