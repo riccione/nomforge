@@ -6,6 +6,7 @@ use tempfile::TempDir;
 /// Create a temporary directory with test files.
 ///
 /// Returns the TempDir (which auto-cleans on drop) and a sorted list of file paths.
+#[allow(dead_code)]
 pub fn create_test_dir(files: &[(&str, &str)]) -> (TempDir, Vec<PathBuf>) {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let mut paths = Vec::new();
@@ -24,6 +25,7 @@ pub fn create_test_dir(files: &[(&str, &str)]) -> (TempDir, Vec<PathBuf>) {
 }
 
 /// Create a temporary directory with a specific structure of subdirectories and files.
+#[allow(dead_code)]
 pub fn create_test_dir_nested(structure: &[(&str, &str)]) -> TempDir {
     let tmp = TempDir::new().expect("failed to create temp dir");
 
@@ -39,6 +41,7 @@ pub fn create_test_dir_nested(structure: &[(&str, &str)]) -> TempDir {
 }
 
 /// Get sorted file names from a directory (non-recursive).
+#[allow(dead_code)]
 pub fn file_names(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
@@ -51,6 +54,7 @@ pub fn file_names(dir: &Path) -> Vec<String> {
 }
 
 /// Get sorted file names recursively.
+#[allow(dead_code)]
 pub fn file_names_recursive(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     visit_dirs(dir, dir, &mut names);
@@ -58,6 +62,7 @@ pub fn file_names_recursive(dir: &Path) -> Vec<String> {
     names
 }
 
+#[allow(dead_code)]
 fn visit_dirs(base: &Path, dir: &Path, names: &mut Vec<String>) {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -73,6 +78,7 @@ fn visit_dirs(base: &Path, dir: &Path, names: &mut Vec<String>) {
 }
 
 /// Read file content as string.
+#[allow(dead_code)]
 pub fn read_content(path: &Path) -> String {
     fs::read_to_string(path).unwrap()
 }
