@@ -19,66 +19,7 @@ impl eframe::App for NomforgeApp {
         ui.separator();
 
         // Rules section
-        ui.collapsing("Rules", |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Find:");
-                ui.text_edit_singleline(&mut self.state.find);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Replace:");
-                ui.text_edit_singleline(&mut self.state.replace);
-            });
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                ui.label("Regex:");
-                ui.text_edit_singleline(&mut self.state.regex);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Replacement:");
-                ui.text_edit_singleline(&mut self.state.replacement);
-            });
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                ui.label("Prefix:");
-                ui.text_edit_singleline(&mut self.state.prefix);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Suffix:");
-                ui.text_edit_singleline(&mut self.state.suffix);
-            });
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                ui.label("Remove:");
-                ui.text_edit_singleline(&mut self.state.remove);
-            });
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                ui.label("Case:");
-                egui::ComboBox::from_id_salt("case_combo")
-                    .selected_text(&self.state.case)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.state.case, String::new(), "(none)");
-                        ui.selectable_value(&mut self.state.case, "upper".into(), "Upper");
-                        ui.selectable_value(&mut self.state.case, "lower".into(), "Lower");
-                        ui.selectable_value(&mut self.state.case, "title".into(), "Title");
-                    });
-            });
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                ui.label("Extension:");
-                ui.text_edit_singleline(&mut self.state.ext);
-            });
-        });
+        crate::panels::rule_builder::show(ui, &mut self.state);
 
         // Filtering section
         ui.collapsing("Filtering", |ui| {
