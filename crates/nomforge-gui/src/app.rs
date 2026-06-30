@@ -55,33 +55,8 @@ impl eframe::App for NomforgeApp {
         // Status
         ui.label(&self.state.status);
 
-        // Results
-        if !self.state.results.is_empty() {
-            ui.separator();
-            ui.heading("Results");
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for result in &self.state.results {
-                    let source = result
-                        .source
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let target = result
-                        .target
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-
-                    if result.source == result.target {
-                        ui.label(format!("{source} (no change)"));
-                    } else if result.success {
-                        ui.label(format!("{source} -> {target}"));
-                    } else {
-                        ui.colored_label(egui::Color32::RED, format!("{source} FAILED"));
-                    }
-                }
-            });
-        }
+        // Preview and results table
+        crate::panels::preview_table::show(ui, &self.state);
     }
 }
 
