@@ -50,10 +50,8 @@ impl eframe::App for NomforgeApp {
             }
         });
 
-        ui.separator();
-
-        // Status
-        ui.label(&self.state.status);
+        // Status bar
+        crate::panels::status_bar::show(ui, &self.state);
 
         // Preview and results table
         crate::panels::preview_table::show(ui, &self.state);
