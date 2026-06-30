@@ -1,6 +1,7 @@
 mod app;
 mod panels;
 mod state;
+mod widgets;
 
 use app::NomforgeApp;
 
