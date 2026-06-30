@@ -14,15 +14,7 @@ impl eframe::App for NomforgeApp {
         ui.separator();
 
         // Directory picker
-        ui.horizontal(|ui| {
-            ui.label("Directory:");
-            ui.text_edit_singleline(&mut self.state.dir);
-            if ui.button("Browse...").clicked()
-                && let Some(path) = rfd::FileDialog::new().pick_folder()
-            {
-                self.state.dir = path.display().to_string();
-            }
-        });
+        crate::panels::folder_picker::show(ui, &mut self.state);
 
         ui.separator();
 
