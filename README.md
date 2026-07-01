@@ -16,14 +16,18 @@ A bulk file renaming tool with CLI and GUI interfaces, built in Rust.
 ```
 nomforge-core    — rename rules, engine, scanner, conflict detection, undo log
 nomforge-cli     — command-line interface (clap)
-nomforge-gui     — graphical interface (eframe, planned)
+nomforge-gui     — graphical interface (eframe)
 ```
 
 ## Installation
 
+Requires **Rust edition 2024** (Rust 1.85+).
+
 ```bash
 cargo install --path crates/nomforge-cli
 ```
+
+This installs the `nomforge-cli` binary.
 
 ## Usage
 
@@ -31,56 +35,55 @@ cargo install --path crates/nomforge-cli
 
 ```bash
 # Dry-run (default) — preview changes without modifying files
-nomforge rename --dir ./photos --prefix "vacation_" --suffix "_2024"
+nomforge-cli rename --dir ./photos --prefix "vacation_" --suffix "_2024"
 
 # Apply renames
-nomforge rename --dir ./photos --prefix "vacation_" --apply
+nomforge-cli rename --dir ./photos --prefix "vacation_" --apply
 
 # Case transform
-nomforge rename --dir ./docs --case upper --apply
+nomforge-cli rename --dir ./docs --case upper --apply
 
 # Regex replace
-nomforge rename --dir ./logs --regex "(\d{4})-(\d{2})" --replacement "$2-$1" --apply
+nomforge-cli rename --dir ./logs --regex "(\d{4})-(\d{2})" --replacement "${2}-${1}" --apply
 
 # Counter
-nomforge rename --dir ./exports --counter-start 1 --counter-padding 3 --counter-position suffix --apply
+nomforge-cli rename --dir ./exports --counter-start 1 --counter-padding 3 --counter-position suffix --apply
 
 # Remove text
-nomforge rename --dir ./downloads --remove "copy" --apply
-
-# Change extension
-nomforge rename --dir ./converted --ext txt --ext md --apply
+nomforge-cli rename --dir ./downloads --remove "copy" --apply
 ```
 
 ### File filtering
 
 ```bash
 # Only .txt files
-nomforge rename --dir ./docs --ext txt --case upper --apply
+nomforge-cli rename --dir ./docs --ext txt --case upper --apply
 
 # Recursive scan
-nomforge rename --dir ./project --recursive --find "old" --replace "new" --apply
+nomforge-cli rename --dir ./project --recursive --find "old" --replace "new" --apply
 
 # Include/exclude patterns
-nomforge rename --dir ./photos --include "IMG_\d+" --exclude "backup" --prefix "photo_" --apply
+nomforge-cli rename --dir ./photos --include "IMG_\d+" --exclude "backup" --prefix "photo_" --apply
 
 # Include hidden files
-nomforge rename --dir ./config --hidden --find "." --replace "_" --apply
+nomforge-cli rename --dir ./config --hidden --find "." --replace "_" --apply
 ```
 
 ### Undo
 
+The undo log defaults to `~/.local/share/nomforge/undo_log.json`. The directory is created automatically on first use.
+
 ```bash
 # Undo last batch
-nomforge undo
+nomforge-cli undo
 
 # Undo with custom history file
-nomforge undo --history-file /path/to/undo.json
+nomforge-cli undo --history-file /path/to/undo.json
 ```
 
 ## CLI Reference
 
-### `nomforge rename`
+### `nomforge-cli rename`
 
 | Flag | Short | Description |
 |------|-------|-------------|
@@ -88,7 +91,7 @@ nomforge undo --history-file /path/to/undo.json
 | `--find` | | Plain text to find in filename |
 | `--replace` | | Replacement text (pairs with --find) |
 | `--regex` | `-r` | Regex pattern to match |
-| `--replacement` | | Replacement string for regex (supports $1, $2, etc.) |
+| `--replacement` | | Replacement string for regex (supports `${1}`, `${2}`, etc.) |
 | `--prefix` | | Add prefix to filename |
 | `--suffix` | | Add suffix to filename |
 | `--remove` | | Remove all occurrences of this text |
@@ -106,7 +109,9 @@ nomforge undo --history-file /path/to/undo.json
 | `--history-file` | | Custom undo log file path |
 | `--verbose` | `-v` | Show detailed output |
 
-### `nomforge undo`
+> **Note on regex replacement:** Use brace syntax for capture group references to avoid ambiguity. For example, use `${2}_${1}` instead of `$2_$1`, since `$2_` would be parsed as a named group reference.
+
+### `nomforge-cli undo`
 
 | Flag | Description |
 |------|-------------|
