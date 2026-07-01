@@ -11,7 +11,7 @@ fn nomforge_bin() -> PathBuf {
     // Go up to workspace root
     path.pop(); // nomforge-cli
     path.pop(); // crates
-    path.join("target/debug/nomforge")
+    path.join("target/debug/nomforge-cli")
 }
 
 /// Run the nomforge CLI with the given arguments.
