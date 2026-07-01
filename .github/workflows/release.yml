@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+env:
+  CLI_BIN: nomforge-cli
+  GUI_BIN: nomforge
+
 jobs:
   build-release:
     name: build-release
@@ -63,8 +67,8 @@ jobs:
     - name: Strip symbols
       if: matrix.os != 'windows-latest'
       run: |
-        strip target/${{ matrix.target }}/release/nomforge-cli
-        strip target/${{ matrix.target }}/release/nomforge
+        strip target/${{ matrix.target }}/release/${{ env.CLI_BIN }}
+        strip target/${{ matrix.target }}/release/${{ env.GUI_BIN }}
 
     - name: Run UPX
       if: matrix.os == 'ubuntu-latest'
@@ -72,13 +76,14 @@ jobs:
       with:
         version: latest
         files: |
-          target/${{ matrix.target }}/release/nomforge-cli
-          target/${{ matrix.target }}/release/nomforge
+          target/${{ matrix.target }}/release/${{ env.CLI_BIN }}
+          target/${{ matrix.target }}/release/${{ env.GUI_BIN }}
         args: --best --lzma
 
     - name: Generate Changelog
       id: changelog
       if: matrix.os == 'ubuntu-latest'
+      continue-on-error: true
       uses: jaywcjlove/changelog-generator@main
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -87,8 +92,8 @@ jobs:
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: target/${{ matrix.target }}/release/nomforge-cli${{ matrix.os == 'windows-latest' && '.exe' || '' }}
-        asset_name: nomforge-cli_${{ matrix.platform }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        file: target/${{ matrix.target }}/release/${{ env.CLI_BIN }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        asset_name: ${{ env.CLI_BIN }}_${{ matrix.platform }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
         tag: ${{ github.ref_name }}
         overwrite: true
         prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -98,8 +103,8 @@ jobs:
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: target/${{ matrix.target }}/release/nomforge${{ matrix.os == 'windows-latest' && '.exe' || '' }}
-        asset_name: nomforge_${{ matrix.platform }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        file: target/${{ matrix.target }}/release/${{ env.GUI_BIN }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        asset_name: ${{ env.GUI_BIN }}_${{ matrix.platform }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
         tag: ${{ github.ref_name }}
         overwrite: true
         prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
