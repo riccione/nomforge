@@ -35,6 +35,18 @@ impl eframe::App for NomforgeApp {
             ui.checkbox(&mut self.state.hidden, "Include hidden files");
         });
 
+        // Undo settings
+        ui.collapsing("Undo", |ui| {
+            ui.checkbox(&mut self.state.no_undo, "Disable undo logging");
+            ui.horizontal(|ui| {
+                ui.label("History file:");
+                ui.text_edit_singleline(&mut self.state.history_file);
+            });
+            if self.state.history_file.is_empty() {
+                ui.label("(default: ~/.local/share/nomforge/undo_log.json)");
+            }
+        });
+
         ui.separator();
 
         // Actions
@@ -174,8 +186,19 @@ impl NomforgeApp {
 
         let succeeded = results.iter().filter(|r| r.success).count();
         self.state.status = format!("Renamed {succeeded} file(s)");
-        self.state.results = results;
+        self.state.results = results.clone();
         self.state.applied = true;
+
+        if !self.state.no_undo {
+            let history_path = if self.state.history_file.is_empty() {
+                nomforge_core::default_undo_log_path()
+            } else {
+                std::path::PathBuf::from(&self.state.history_file)
+            };
+            if let Err(e) = nomforge_core::log_renames(&history_path, &results) {
+                self.state.status = format!("Renamed {succeeded} file(s) (undo log error: {e})");
+            }
+        }
     }
 }
 
