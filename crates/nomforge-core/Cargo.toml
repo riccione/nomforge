@@ -1,9 +1,12 @@
 [package]
 name = "nomforge-core"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "Core library for nomforge bulk file renamer"
-license = "MIT OR Apache-2.0"
+license.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
 
 [dependencies]
 regex = "1.12"

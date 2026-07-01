@@ -1,12 +1,15 @@
 [package]
 name = "nomforge-gui"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "GUI for nomforge bulk file renamer"
-license = "MIT OR Apache-2.0"
+license.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
 
 [[bin]]
-name = "nomforge-gui"
+name = "nomforge"
 path = "src/main.rs"
 
 [dependencies]

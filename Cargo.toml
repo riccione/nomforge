@@ -5,3 +5,17 @@ members = [
     "crates/nomforge-cli",
     "crates/nomforge-gui",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+homepage = "https://github.com/riccione/nomforge"
+documentation = "https://github.com/riccione/nomforge"
+repository = "https://github.com/riccione/nomforge"
+
+[profile.release]
+strip = true
+lto = true
+#panic = "abort"
+opt-level = "z"
