@@ -10,7 +10,7 @@ pub struct NomforgeApp {
 
 impl eframe::App for NomforgeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        ui.heading("nomforge");
+        ui.heading(format!("nomforge v{}", { env!("CARGO_PKG_VERSION") }));
         ui.separator();
 
         // Directory picker
