@@ -77,6 +77,9 @@ impl eframe::App for NomforgeApp {
             }
         }
 
+        // Conflict confirmation modal
+        self.show_conflict_modal(ui);
+
         ui.separator();
 
         // Actions
@@ -230,30 +233,22 @@ impl NomforgeApp {
             }
         };
 
-        let results = match engine.apply(&plans) {
-            Ok(r) => r,
-            Err(e) => {
-                self.state.status = format!("Apply error: {e}");
-                return;
-            }
-        };
-
-        let succeeded = results.iter().filter(|r| r.success).count();
-        self.state.status = format!("Renamed {succeeded} file(s)");
-        self.state.plans = plans;
-        self.state.results = results.clone();
-        self.state.applied = true;
-
-        if !self.state.no_undo {
-            let history_path = if self.state.history_file.is_empty() {
-                nomforge_core::default_undo_log_path()
-            } else {
-                std::path::PathBuf::from(&self.state.history_file)
-            };
-            if let Err(e) = nomforge_core::log_renames(&history_path, &results) {
-                self.state.status = format!("Renamed {succeeded} file(s) (undo log error: {e})");
-            }
+        // Detect conflicts before applying
+        let conflicts = nomforge_core::detect_conflicts(&plans);
+        if !conflicts.is_empty() {
+            self.state.pending_conflicts = conflicts;
+            self.state.show_conflict_modal = true;
+            self.state.status = format!(
+                "{} conflict(s) detected — review before applying",
+                self.state.pending_conflicts.len()
+            );
+            // Store plans and files for later apply
+            self.state.plans = plans;
+            self.state.files = files;
+            return;
         }
+
+        self.do_apply(plans, files);
     }
 
     fn perform_undo(&mut self) {
@@ -275,6 +270,81 @@ impl NomforgeApp {
                 self.preview();
             }
             Err(e) => self.state.status = format!("Undo error: {e}"),
+        }
+    }
+
+    fn do_apply(&mut self, plans: Vec<nomforge_core::RenamePlan>, files: Vec<std::path::PathBuf>) {
+        let engine = nomforge_core::RenameEngine::new(self.state.build_rules().unwrap_or_default());
+
+        let results = match engine.apply(&plans) {
+            Ok(r) => r,
+            Err(e) => {
+                self.state.status = format!("Apply error: {e}");
+                return;
+            }
+        };
+
+        let succeeded = results.iter().filter(|r| r.success).count();
+        self.state.status = format!("Renamed {succeeded} file(s)");
+        self.state.plans = plans;
+        self.state.files = files;
+        self.state.results = results.clone();
+        self.state.applied = true;
+
+        if !self.state.no_undo {
+            let history_path = if self.state.history_file.is_empty() {
+                nomforge_core::default_undo_log_path()
+            } else {
+                std::path::PathBuf::from(&self.state.history_file)
+            };
+            if let Err(e) = nomforge_core::log_renames(&history_path, &results) {
+                self.state.status = format!("Renamed {succeeded} file(s) (undo log error: {e})");
+            }
+        }
+    }
+
+    fn show_conflict_modal(&mut self, ui: &mut egui::Ui) {
+        if !self.state.show_conflict_modal {
+            return;
+        }
+
+        let modal = egui::Modal::new(egui::Id::new("conflict_confirm")).show(ui.ctx(), |ui| {
+            ui.set_width(400.0);
+            ui.heading("Conflicts Detected");
+            ui.label("The following conflicts were found:");
+            ui.add_space(8.0);
+
+            egui::ScrollArea::vertical()
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for conflict in &self.state.pending_conflicts {
+                        ui.label(format!("• {}", conflict.reason));
+                    }
+                });
+
+            ui.add_space(16.0);
+            ui.label("Apply anyway? Files with conflicts may be overwritten.");
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                if ui.button("Apply Anyway").clicked() {
+                    let plans = std::mem::take(&mut self.state.plans);
+                    let files = std::mem::take(&mut self.state.files);
+                    self.state.show_conflict_modal = false;
+                    self.state.pending_conflicts.clear();
+                    self.do_apply(plans, files);
+                }
+                if ui.button("Cancel").clicked() {
+                    self.state.show_conflict_modal = false;
+                    self.state.pending_conflicts.clear();
+                    self.state.status = "Apply cancelled".into();
+                }
+            });
+        });
+
+        if modal.should_close() {
+            self.state.show_conflict_modal = false;
+            self.state.pending_conflicts.clear();
         }
     }
 }

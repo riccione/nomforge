@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use nomforge_core::{RenamePlan, RenameResult, RenameRule};
+use nomforge_core::{Conflict, RenamePlan, RenameResult, RenameRule};
 
 /// Application state for the nomforge GUI.
 #[allow(dead_code)]
@@ -38,6 +38,10 @@ pub struct State {
 
     /// Advanced mode (shows regex fields).
     pub advanced_mode: bool,
+
+    /// Conflict detection.
+    pub show_conflict_modal: bool,
+    pub pending_conflicts: Vec<Conflict>,
 
     /// Output / results.
     pub verbose: bool,
@@ -83,6 +87,8 @@ impl Default for State {
             no_undo: false,
             show_undo_modal: false,
             advanced_mode: false,
+            show_conflict_modal: false,
+            pending_conflicts: Vec::new(),
             verbose: false,
             files: Vec::new(),
             plans: Vec::new(),
