@@ -97,6 +97,13 @@ impl NomforgeApp {
     }
 
     fn preview(&mut self) {
+        // Save cached files before reset
+        let cached_files = if !self.state.files.is_empty() {
+            Some(self.state.files.clone())
+        } else {
+            None
+        };
+
         self.state.reset_output();
 
         let dir = std::path::Path::new(&self.state.dir);
@@ -113,12 +120,17 @@ impl NomforgeApp {
             }
         };
 
-        let scan_options = self.state.build_scan_options();
-        let files = match nomforge_core::scan_files(dir, &scan_options) {
-            Ok(f) => f,
-            Err(e) => {
-                self.state.status = format!("Scan error: {e}");
-                return;
+        // Reuse cached files if available, otherwise scan
+        let files = if let Some(cached) = cached_files {
+            cached
+        } else {
+            let scan_options = self.state.build_scan_options();
+            match nomforge_core::scan_files(dir, &scan_options) {
+                Ok(f) => f,
+                Err(e) => {
+                    self.state.status = format!("Scan error: {e}");
+                    return;
+                }
             }
         };
 
@@ -141,6 +153,13 @@ impl NomforgeApp {
     }
 
     fn apply(&mut self) {
+        // Save cached files before reset
+        let cached_files = if !self.state.files.is_empty() {
+            Some(self.state.files.clone())
+        } else {
+            None
+        };
+
         self.state.reset_output();
 
         let dir = std::path::Path::new(&self.state.dir);
@@ -157,12 +176,17 @@ impl NomforgeApp {
             }
         };
 
-        let scan_options = self.state.build_scan_options();
-        let files = match nomforge_core::scan_files(dir, &scan_options) {
-            Ok(f) => f,
-            Err(e) => {
-                self.state.status = format!("Scan error: {e}");
-                return;
+        // Reuse cached files if available, otherwise scan
+        let files = if let Some(cached) = cached_files {
+            cached
+        } else {
+            let scan_options = self.state.build_scan_options();
+            match nomforge_core::scan_files(dir, &scan_options) {
+                Ok(f) => f,
+                Err(e) => {
+                    self.state.status = format!("Scan error: {e}");
+                    return;
+                }
             }
         };
 
