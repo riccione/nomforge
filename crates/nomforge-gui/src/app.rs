@@ -240,6 +240,7 @@ impl NomforgeApp {
 
         let succeeded = results.iter().filter(|r| r.success).count();
         self.state.status = format!("Renamed {succeeded} file(s)");
+        self.state.plans = plans;
         self.state.results = results.clone();
         self.state.applied = true;
 
