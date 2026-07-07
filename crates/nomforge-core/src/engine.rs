@@ -101,18 +101,25 @@ impl RenameEngine {
 
         // Apply rules in order, each rule sees the result of the previous one
         let mut current_stem = stem;
+        let mut current_ext = extension.clone();
         for rule in &self.rules {
             ctx.stem = current_stem.clone();
+            ctx.extension = current_ext.clone();
             let new_stem = rule.apply(&ctx)?;
             current_stem = new_stem;
+            // Track extension changes from ChangeExtension rules
+            if let RenameRule::ChangeExtension { new_ext } = rule {
+                current_ext = match new_ext {
+                    None => current_ext,
+                    Some(ext) if ext.is_empty() => String::new(),
+                    Some(ext) => ext.clone(),
+                };
+            }
         }
-
-        // Determine final extension
-        let final_ext = self.apply_extension_rules(&extension, &ctx);
-        let target = if final_ext.is_empty() {
+        let target = if current_ext.is_empty() {
             parent_dir.join(&current_stem)
         } else {
-            parent_dir.join(format!("{}.{}", current_stem, final_ext))
+            parent_dir.join(format!("{}.{}", current_stem, current_ext))
         };
 
         // Validate filename component length against OS limits.
@@ -134,22 +141,6 @@ impl RenameEngine {
             source: path.to_path_buf(),
             target,
         })
-    }
-
-    fn apply_extension_rules(&self, original_ext: &str, ctx: &RenameContext) -> String {
-        let mut current_ext = original_ext.to_string();
-        for rule in &self.rules {
-            if let RenameRule::ChangeExtension { new_ext } = rule {
-                current_ext = match new_ext {
-                    None => current_ext,
-                    Some(ext) if ext.is_empty() => String::new(),
-                    Some(ext) => ext.clone(),
-                };
-                // Update ctx for subsequent rules
-                let _ = ctx;
-            }
-        }
-        current_ext
     }
 
     fn apply_single(&self, plan: &RenamePlan) -> RenameResult {
@@ -399,6 +390,67 @@ mod tests {
         // Should succeed since "a".repeat(251) + ".txt" = 255 bytes
         let target_name = plans[0].target.file_name().unwrap().to_str().unwrap();
         assert_eq!(target_name.len(), 255);
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_prefix_with_extension_change() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_prefix_ext");
+        setup_test_dir(&tmp);
+
+        let engine = RenameEngine::new(vec![
+            RenameRule::Prefix("pre_".into()),
+            RenameRule::ChangeExtension {
+                new_ext: Some("md".into()),
+            },
+        ]);
+        let files = vec![tmp.join("file1.txt")];
+        let plans = engine.plan(&files).unwrap();
+
+        assert_eq!(plans[0].target, tmp.join("pre_file1.md"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_case_with_extension_removal() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_case_ext_rm");
+        setup_test_dir(&tmp);
+
+        let engine = RenameEngine::new(vec![
+            RenameRule::CaseTransform(crate::rules::Case::Upper),
+            RenameRule::ChangeExtension {
+                new_ext: Some("".into()),
+            },
+        ]);
+        let files = vec![tmp.join("file1.txt")];
+        let plans = engine.plan(&files).unwrap();
+
+        // No extension, so no dot in filename
+        assert_eq!(plans[0].target, tmp.join("FILE1"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_multiple_extension_changes_uses_last() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_multi_ext");
+        setup_test_dir(&tmp);
+
+        let engine = RenameEngine::new(vec![
+            RenameRule::ChangeExtension {
+                new_ext: Some("md".into()),
+            },
+            RenameRule::ChangeExtension {
+                new_ext: Some("rs".into()),
+            },
+        ]);
+        let files = vec![tmp.join("file1.txt")];
+        let plans = engine.plan(&files).unwrap();
+
+        // Last extension rule wins
+        assert_eq!(plans[0].target, tmp.join("file1.rs"));
 
         cleanup_test_dir(&tmp);
     }
