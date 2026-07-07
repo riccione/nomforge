@@ -41,9 +41,16 @@ impl Default for UndoLog {
     }
 }
 
-/// Get the default undo log path (~/.local/share/nomforge/undo_log.json).
+/// Get the default undo log path.
+///
+/// Path varies by platform:
+/// - Linux/macOS: `~/.local/share/nomforge/undo_log.json`
+/// - Windows: `%USERPROFILE%\.local\share\nomforge\undo_log.json`
+/// - Fallback: `./undo_log.json`
 pub fn default_undo_log_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home)
         .join(".local")
         .join("share")

@@ -71,7 +71,7 @@ nomforge-cli rename --dir ./config --hidden --find "." --replace "_" --apply
 
 ### Undo
 
-The undo log defaults to `~/.local/share/nomforge/undo_log.json`. The directory is created automatically on first use.
+The undo log defaults to `~/.local/share/nomforge/undo_log.json` on Linux/macOS, or `%USERPROFILE%\.local\share\nomforge\undo_log.json` on Windows. The directory is created automatically on first use.
 
 ```bash
 # Undo last batch
