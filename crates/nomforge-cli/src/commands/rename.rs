@@ -52,9 +52,8 @@ pub fn build_rules(args: &RenameArgs) -> Result<Vec<RenameRule>> {
         rules.push(RenameRule::CaseTransform(case));
     }
 
-    // Number Sequence (only if counter_padding > 0 or counter_start != 1)
-    // Always add if user explicitly set counter_start or counter_padding
-    if args.counter_start != 1 || args.counter_padding > 0 {
+    // Number Sequence (only if counter_start or counter_padding is explicitly set)
+    if args.counter_start.is_some() || args.counter_padding.is_some() {
         let position = match args.counter_position.to_lowercase().as_str() {
             "prefix" => SeqPosition::Prefix,
             "suffix" => SeqPosition::Suffix,
@@ -65,8 +64,8 @@ pub fn build_rules(args: &RenameArgs) -> Result<Vec<RenameRule>> {
             ),
         };
         rules.push(RenameRule::NumberSequence {
-            start: args.counter_start,
-            padding: args.counter_padding,
+            start: args.counter_start.unwrap_or(1),
+            padding: args.counter_padding.unwrap_or(0),
             position,
         });
     }
@@ -110,8 +109,8 @@ mod tests {
             suffix: None,
             remove: None,
             case: None,
-            counter_start: 1,
-            counter_padding: 0,
+            counter_start: None,
+            counter_padding: None,
             counter_position: "prefix".into(),
             ext: None,
             include: None,
@@ -200,8 +199,8 @@ mod tests {
     #[test]
     fn build_rules_counter() {
         let args = RenameArgs {
-            counter_start: 1,
-            counter_padding: 3,
+            counter_start: Some(1),
+            counter_padding: Some(3),
             counter_position: "prefix".into(),
             ..default_args()
         };
@@ -220,7 +219,7 @@ mod tests {
     #[test]
     fn build_rules_counter_position_suffix() {
         let args = RenameArgs {
-            counter_padding: 3,
+            counter_padding: Some(3),
             counter_position: "suffix".into(),
             ..default_args()
         };
@@ -237,7 +236,7 @@ mod tests {
     #[test]
     fn build_rules_counter_position_replace() {
         let args = RenameArgs {
-            counter_padding: 3,
+            counter_padding: Some(3),
             counter_position: "replace".into(),
             ..default_args()
         };
@@ -254,7 +253,7 @@ mod tests {
     #[test]
     fn build_rules_counter_position_invalid() {
         let args = RenameArgs {
-            counter_padding: 3,
+            counter_padding: Some(3),
             counter_position: "invalid".into(),
             ..default_args()
         };
@@ -266,8 +265,8 @@ mod tests {
         let args = RenameArgs {
             prefix: Some("vacation_".into()),
             case: Some("lower".into()),
-            counter_start: 1,
-            counter_padding: 3,
+            counter_start: Some(1),
+            counter_padding: Some(3),
             counter_position: "prefix".into(),
             ..default_args()
         };
@@ -282,6 +281,28 @@ mod tests {
     fn build_rules_no_rules_errors() {
         let args = default_args();
         assert!(build_rules(&args).is_err());
+    }
+
+    #[test]
+    fn build_rules_counter_explicit_defaults() {
+        // User explicitly passes --counter-start 1 --counter-padding 0
+        // These are the defaults, but counter should still be added
+        let args = RenameArgs {
+            counter_start: Some(1),
+            counter_padding: Some(0),
+            counter_position: "prefix".into(),
+            ..default_args()
+        };
+        let rules = build_rules(&args).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(matches!(
+            &rules[0],
+            RenameRule::NumberSequence {
+                start: 1,
+                padding: 0,
+                position: SeqPosition::Prefix
+            }
+        ));
     }
 
     #[test]
