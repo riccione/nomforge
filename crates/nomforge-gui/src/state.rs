@@ -34,6 +34,7 @@ pub struct State {
     /// Undo settings.
     pub history_file: String,
     pub no_undo: bool,
+    pub show_undo_modal: bool,
 
     /// Output / results.
     pub verbose: bool,
@@ -77,6 +78,7 @@ impl Default for State {
             ext_change: String::new(),
             history_file: String::new(),
             no_undo: false,
+            show_undo_modal: false,
             verbose: false,
             files: Vec::new(),
             plans: Vec::new(),
