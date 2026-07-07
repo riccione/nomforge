@@ -34,6 +34,10 @@ impl std::fmt::Display for ConflictReason {
 /// Checks for:
 /// - Duplicate target paths (two files mapping to the same name)
 /// - Target paths that already exist on disk
+///
+/// Note: `TargetExists` detection has an inherent TOCTOU race — a file could
+/// be created between planning and conflict detection. This is acceptable for
+/// CLI usage where operations are sequential and short-lived.
 pub fn detect_conflicts(plans: &[RenamePlan]) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
     let mut seen_targets: HashSet<&PathBuf> = HashSet::new();
