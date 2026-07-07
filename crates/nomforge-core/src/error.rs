@@ -37,6 +37,9 @@ pub enum NomforgeError {
 
     #[error("JSON serialization error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Walk directory error: {0}")]
+    WalkDir(String),
 }
 
 pub type Result<T> = std::result::Result<T, NomforgeError>;

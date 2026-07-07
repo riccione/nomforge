@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use walkdir::WalkDir;
 
-use crate::error::Result;
+use crate::error::{NomforgeError, Result};
 
 /// Options for scanning files in a directory.
 #[derive(Debug, Clone, Default)]
@@ -50,7 +50,9 @@ pub fn scan_files(dir: &Path, options: &ScanOptions) -> Result<Vec<PathBuf>> {
 
     let mut files: Vec<PathBuf> = walker
         .into_iter()
-        .filter_map(|e| e.ok())
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| NomforgeError::WalkDir(e.to_string()))?
+        .into_iter()
         .filter(|e| e.file_type().is_file())
         .filter(|e| {
             let name = e.file_name().to_string_lossy();
@@ -282,7 +284,7 @@ mod tests {
     #[test]
     fn scan_nonexistent_directory() {
         let tmp = PathBuf::from("/tmp/nomforge_test_scan_nonexistent_12345");
-        let files = scan_files(&tmp, &Default::default()).unwrap();
-        assert!(files.is_empty());
+        let result = scan_files(&tmp, &Default::default());
+        assert!(result.is_err());
     }
 }

@@ -180,13 +180,13 @@ fn scanner_empty_directory() {
     assert!(files.is_empty());
 }
 
-// Test 11: scan nonexistent directory returns empty
+// Test 11: scan nonexistent directory returns error
 #[test]
 fn scanner_nonexistent_directory() {
     let tmp = tempfile::TempDir::new().unwrap();
     let nonexistent = tmp.path().join("does_not_exist");
-    let files = scan_files(&nonexistent, &Default::default()).unwrap();
-    assert!(files.is_empty());
+    let result = scan_files(&nonexistent, &Default::default());
+    assert!(result.is_err());
 }
 
 // Test 12: scan results are sorted
