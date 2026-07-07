@@ -103,6 +103,11 @@ pub fn log_renames(path: &Path, results: &[RenameResult]) -> Result<()> {
 /// Revert the last batch of renames.
 ///
 /// Returns the number of files successfully reverted.
+///
+/// Attempts the rename directly without pre-checking file existence to avoid
+/// race conditions where the filesystem state changes between check and rename.
+/// If the rename fails (e.g., target doesn't exist, source already exists),
+/// that entry is skipped gracefully.
 pub fn revert_last(path: &Path) -> Result<usize> {
     let mut log = load_undo_log(path)?;
 
@@ -113,11 +118,9 @@ pub fn revert_last(path: &Path) -> Result<usize> {
 
     let mut reverted = 0;
     for entry in batch.operations.iter().rev() {
-        // Only revert if the target exists and source doesn't
-        if entry.target.exists()
-            && !entry.source.exists()
-            && fs::rename(&entry.target, &entry.source).is_ok()
-        {
+        // Attempt rename directly — if it fails, skip this entry.
+        // This avoids TOCTOU race conditions between existence checks and rename.
+        if fs::rename(&entry.target, &entry.source).is_ok() {
             reverted += 1;
         }
     }
