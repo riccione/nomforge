@@ -49,7 +49,33 @@ impl eframe::App for NomforgeApp {
             if self.state.history_file.is_empty() {
                 ui.label("(default: ~/.local/share/nomforge/undo_log.json)");
             }
+            ui.separator();
+            if ui.button("Undo Last Batch").clicked() {
+                self.state.show_undo_modal = true;
+            }
         });
+
+        // Undo confirmation modal
+        if self.state.show_undo_modal {
+            let modal = egui::Modal::new(egui::Id::new("undo_confirm")).show(ui.ctx(), |ui| {
+                ui.set_width(300.0);
+                ui.heading("Undo Last Batch?");
+                ui.label("This will revert the most recent rename operation.");
+                ui.add_space(16.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Apply").clicked() {
+                        self.perform_undo();
+                        self.state.show_undo_modal = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.state.show_undo_modal = false;
+                    }
+                });
+            });
+            if modal.should_close() {
+                self.state.show_undo_modal = false;
+            }
+        }
 
         ui.separator();
 
@@ -226,6 +252,28 @@ impl NomforgeApp {
             if let Err(e) = nomforge_core::log_renames(&history_path, &results) {
                 self.state.status = format!("Renamed {succeeded} file(s) (undo log error: {e})");
             }
+        }
+    }
+
+    fn perform_undo(&mut self) {
+        let history_path = if self.state.history_file.is_empty() {
+            nomforge_core::default_undo_log_path()
+        } else {
+            std::path::PathBuf::from(&self.state.history_file)
+        };
+
+        if !history_path.exists() {
+            self.state.status = "No undo history found".into();
+            return;
+        }
+
+        match nomforge_core::revert_last(&history_path) {
+            Ok(0) => self.state.status = "No undo history found".into(),
+            Ok(n) => {
+                self.state.status = format!("Reverted {n} file(s)");
+                self.preview();
+            }
+            Err(e) => self.state.status = format!("Undo error: {e}"),
         }
     }
 }
