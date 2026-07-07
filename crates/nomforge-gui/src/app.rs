@@ -24,6 +24,10 @@ impl eframe::App for NomforgeApp {
         // Filtering section
         ui.collapsing("Filtering", |ui| {
             ui.horizontal(|ui| {
+                ui.label("Filter by extension:");
+                ui.text_edit_singleline(&mut self.state.filter_ext);
+            });
+            ui.horizontal(|ui| {
                 ui.label("Include pattern:");
                 ui.text_edit_singleline(&mut self.state.include);
             });

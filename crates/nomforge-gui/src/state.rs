@@ -22,11 +22,14 @@ pub struct State {
     pub counter_position: String,
 
     /// File filtering.
-    pub ext: String,
+    pub filter_ext: String,
     pub include: String,
     pub exclude: String,
     pub recursive: bool,
     pub hidden: bool,
+
+    /// Extension change rule.
+    pub ext_change: String,
 
     /// Undo settings.
     pub history_file: String,
@@ -66,11 +69,12 @@ impl Default for State {
             counter_start: 1,
             counter_padding: 0,
             counter_position: "prefix".into(),
-            ext: String::new(),
+            filter_ext: String::new(),
             include: String::new(),
             exclude: String::new(),
             recursive: false,
             hidden: false,
+            ext_change: String::new(),
             history_file: String::new(),
             no_undo: false,
             verbose: false,
@@ -129,9 +133,9 @@ impl State {
             rules.push(RenameRule::CaseTransform(case));
         }
 
-        if !self.ext.is_empty() {
+        if !self.ext_change.is_empty() {
             rules.push(RenameRule::ChangeExtension {
-                new_ext: Some(self.ext.clone()),
+                new_ext: Some(self.ext_change.clone()),
             });
         }
 
@@ -140,11 +144,11 @@ impl State {
 
     /// Build scan options from current state.
     pub fn build_scan_options(&self) -> nomforge_core::ScanOptions {
-        let extensions = if self.ext.is_empty() {
+        let extensions = if self.filter_ext.is_empty() {
             None
         } else {
             let exts: Vec<String> = self
-                .ext
+                .filter_ext
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
@@ -315,7 +319,7 @@ mod tests {
     #[test]
     fn build_rules_extension() {
         let state = State {
-            ext: "txt".into(),
+            ext_change: "txt".into(),
             ..Default::default()
         };
         let rules = state.build_rules().unwrap();
@@ -328,7 +332,7 @@ mod tests {
         let state = State {
             prefix: "pre_".into(),
             case: "upper".into(),
-            ext: "md".into(),
+            ext_change: "md".into(),
             ..Default::default()
         };
         let rules = state.build_rules().unwrap();
@@ -349,7 +353,7 @@ mod tests {
     #[test]
     fn build_scan_options_with_values() {
         let state = State {
-            ext: "txt,md".into(),
+            filter_ext: "txt,md".into(),
             recursive: true,
             include: "test_.*".into(),
             exclude: "backup".into(),

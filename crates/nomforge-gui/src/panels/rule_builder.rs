@@ -60,8 +60,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
         ui.separator();
 
         ui.horizontal(|ui| {
-            ui.label("Extension:");
-            ui.text_edit_singleline(&mut state.ext);
+            ui.label("Change Extension:");
+            ui.text_edit_singleline(&mut state.ext_change);
         });
     });
 }
