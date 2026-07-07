@@ -2,7 +2,7 @@ use eframe::egui;
 
 use crate::state::State;
 
-/// Render the rule builder panel (simple mode).
+/// Render the rule builder panel (simple mode by default, regex in advanced mode).
 pub fn show(ui: &mut egui::Ui, state: &mut State) {
     ui.collapsing("Rules", |ui| {
         ui.horizontal(|ui| {
@@ -12,17 +12,6 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
         ui.horizontal(|ui| {
             ui.label("Replace:");
             ui.text_edit_singleline(&mut state.replace);
-        });
-
-        ui.separator();
-
-        ui.horizontal(|ui| {
-            ui.label("Regex:");
-            ui.text_edit_singleline(&mut state.regex);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Replacement:");
-            ui.text_edit_singleline(&mut state.replacement);
         });
 
         ui.separator();
@@ -63,6 +52,20 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             ui.label("Change Extension:");
             ui.text_edit_singleline(&mut state.ext_change);
         });
+
+        // Advanced mode: regex fields
+        ui.separator();
+        ui.checkbox(&mut state.advanced_mode, "Advanced mode (regex)");
+        if state.advanced_mode {
+            ui.horizontal(|ui| {
+                ui.label("Regex:");
+                ui.text_edit_singleline(&mut state.regex);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Replacement:");
+                ui.text_edit_singleline(&mut state.replacement);
+            });
+        }
     });
 }
 

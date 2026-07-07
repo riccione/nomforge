@@ -36,6 +36,9 @@ pub struct State {
     pub no_undo: bool,
     pub show_undo_modal: bool,
 
+    /// Advanced mode (shows regex fields).
+    pub advanced_mode: bool,
+
     /// Output / results.
     pub verbose: bool,
 
@@ -79,6 +82,7 @@ impl Default for State {
             history_file: String::new(),
             no_undo: false,
             show_undo_modal: false,
+            advanced_mode: false,
             verbose: false,
             files: Vec::new(),
             plans: Vec::new(),
