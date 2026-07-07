@@ -224,10 +224,10 @@ fn cli_rename_empty_dir() {
     );
 }
 
-// Test 10: nonexistent directory returns empty (scan_files returns empty for missing dirs)
+// Test 10: nonexistent directory returns error
 #[test]
 fn cli_rename_nonexistent_dir() {
-    let (exit_code, stdout, _) = common::run_nomforge(&[
+    let (exit_code, _, stderr) = common::run_nomforge(&[
         "rename",
         "--dir",
         "/tmp/nomforge_nonexistent_12345678",
@@ -235,10 +235,10 @@ fn cli_rename_nonexistent_dir() {
         "pre_",
     ]);
 
-    assert_eq!(exit_code, 0, "CLI treats empty scan as success");
+    assert_ne!(exit_code, 0, "Should fail with nonexistent directory");
     assert!(
-        stdout.contains("No files matched") || stdout.contains("0"),
-        "stdout: {stdout}"
+        stderr.contains("Walk directory error") || stderr.contains("not found"),
+        "stderr: {stderr}"
     );
 }
 
