@@ -15,7 +15,7 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "nomforge",
+        concat!("nomforge v", env!("CARGO_PKG_VERSION")),
         options,
         Box::new(|_cc| Ok(Box::new(NomforgeApp::default()))),
     )
