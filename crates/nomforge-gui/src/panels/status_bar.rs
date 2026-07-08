@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use crate::state::State;
+use crate::widgets::conflict_badge;
 
 /// Render the status bar panel.
 pub fn show(ui: &mut egui::Ui, state: &State) {
@@ -25,6 +26,11 @@ pub fn show(ui: &mut egui::Ui, state: &State) {
             egui::RichText::new(status_text)
         };
         ui.label(colored_text);
+
+        // Show conflict badge if there are pending conflicts
+        if !state.pending_conflicts.is_empty() {
+            conflict_badge::show_conflict_count(ui, state.pending_conflicts.len());
+        }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // Summary info
