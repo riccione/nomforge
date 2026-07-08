@@ -1,0 +1,4 @@
+# clippy configuration for nomforge
+# See: https://doc.rust-lang.org/clippy/configuration.html
+
+avoid-breaking-exported-api = true
