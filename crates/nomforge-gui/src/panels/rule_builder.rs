@@ -53,9 +53,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             ui.text_edit_singleline(&mut state.ext_change);
         });
 
-        // Advanced mode: regex fields
+        // Advanced mode: regex and counter fields
         ui.separator();
-        ui.checkbox(&mut state.advanced_mode, "Advanced mode (regex)");
+        ui.checkbox(&mut state.advanced_mode, "Advanced mode");
         if state.advanced_mode {
             ui.horizontal(|ui| {
                 ui.label("Regex:");
@@ -64,6 +64,32 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             ui.horizontal(|ui| {
                 ui.label("Replacement:");
                 ui.text_edit_singleline(&mut state.replacement);
+            });
+
+            ui.separator();
+
+            ui.label("Counter:");
+            ui.horizontal(|ui| {
+                ui.label("Start:");
+                ui.add(egui::DragValue::new(&mut state.counter_start).range(0..=10000));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Padding:");
+                ui.add(egui::DragValue::new(&mut state.counter_padding).range(0..=10));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Position:");
+                egui::ComboBox::from_id_salt("counter_position")
+                    .selected_text(&state.counter_position)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut state.counter_position, "prefix".into(), "Prefix");
+                        ui.selectable_value(&mut state.counter_position, "suffix".into(), "Suffix");
+                        ui.selectable_value(
+                            &mut state.counter_position,
+                            "replace".into(),
+                            "Replace stem",
+                        );
+                    });
             });
         }
     });
