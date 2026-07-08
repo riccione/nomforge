@@ -1,4 +1,8 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+use regex::Regex;
 
 use crate::error::{NomforgeError, Result};
 use crate::rules::{FileMetadata, RenameContext, RenameRule};
@@ -22,11 +26,44 @@ pub struct RenameResult {
 /// The rename engine: generates plans and applies renames.
 pub struct RenameEngine {
     rules: Vec<RenameRule>,
+    /// Cache of compiled regexes, keyed by pattern string.
+    regex_cache: HashMap<String, OnceLock<Regex>>,
 }
 
 impl RenameEngine {
     pub fn new(rules: Vec<RenameRule>) -> Self {
-        Self { rules }
+        // Pre-compile all regex patterns used in rules
+        let mut regex_cache = HashMap::new();
+        for rule in &rules {
+            if let RenameRule::RegexReplace { pattern, .. } = rule {
+                regex_cache
+                    .entry(pattern.clone())
+                    .or_insert_with(OnceLock::new);
+            }
+        }
+        Self { rules, regex_cache }
+    }
+
+    /// Get or compile a regex pattern, using the cache.
+    fn get_regex(&self, pattern: &str) -> Result<&Regex> {
+        let lock = self
+            .regex_cache
+            .get(pattern)
+            .ok_or_else(|| NomforgeError::InvalidRegex {
+                pattern: pattern.to_string(),
+                reason: "pattern not found in cache".to_string(),
+            })?;
+        if let Some(re) = lock.get() {
+            return Ok(re);
+        }
+        // Compile and store the regex
+        let re = Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
+            pattern: pattern.to_string(),
+            reason: e.to_string(),
+        })?;
+        // This might race if called concurrently, but the result is the same
+        let _ = lock.set(re);
+        Ok(lock.get().unwrap())
     }
 
     /// Generate a dry-run preview of renames without mutating the filesystem.
@@ -105,7 +142,16 @@ impl RenameEngine {
         for rule in &self.rules {
             ctx.stem = current_stem.clone();
             ctx.extension = current_ext.clone();
-            let new_stem = rule.apply(&ctx)?;
+            let new_stem = match rule {
+                RenameRule::RegexReplace {
+                    pattern,
+                    replacement,
+                } => {
+                    let re = self.get_regex(pattern)?;
+                    re.replace_all(&ctx.stem, replacement.as_str()).into_owned()
+                }
+                _ => rule.apply(&ctx)?,
+            };
             current_stem = new_stem;
             // Track extension changes from ChangeExtension rules
             if let RenameRule::ChangeExtension { new_ext } = rule {
