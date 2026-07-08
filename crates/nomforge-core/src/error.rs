@@ -10,6 +10,9 @@ pub enum NomforgeError {
     #[error("Invalid regex pattern '{pattern}': {reason}")]
     InvalidRegex { pattern: String, reason: String },
 
+    #[error("Invalid extension '{ext}': {reason}")]
+    InvalidExtension { ext: String, reason: String },
+
     #[error("File not found: {0}")]
     FileNotFound(PathBuf),
 
