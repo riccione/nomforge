@@ -178,6 +178,10 @@ impl NomforgeApp {
         };
 
         self.state.status = format!("{} file(s) to rename", plans.len());
+
+        // Detect conflicts for preview display
+        let conflicts = nomforge_core::detect_conflicts(&plans);
+        self.state.pending_conflicts = conflicts;
         self.state.plans = plans;
     }
 
