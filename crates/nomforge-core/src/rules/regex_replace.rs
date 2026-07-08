@@ -1,37 +1,23 @@
-use crate::error::{NomforgeError, Result};
-use crate::rules::RenameContext;
-
-/// Apply a regex find & replace on the filename stem.
-pub fn apply_regex_replace(
-    pattern: &str,
-    replacement: &str,
-    ctx: &RenameContext,
-) -> Result<String> {
-    let re = regex::Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
-        pattern: pattern.to_string(),
-        reason: e.to_string(),
-    })?;
-    Ok(re.replace_all(&ctx.stem, replacement).into_owned())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::rules::{FileMetadata, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(stem: &str) -> RenameContext {
+    fn make_ctx(stem: &str) -> RenameContext<'static> {
+        use std::sync::LazyLock;
+        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
         RenameContext {
-            filename: format!("{}.txt", stem),
+            filename: "file.txt",
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: PathBuf::from("/tmp"),
+            parent_dir: &PARENT,
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
+            regex_cache: None,
         }
     }
 
@@ -40,8 +26,9 @@ mod tests {
     #[test]
     fn basic_capture_group() {
         let ctx = make_ctx("file_42");
+        let re = ctx.get_regex(r"(\d+)").unwrap();
         assert_eq!(
-            apply_regex_replace(r"(\d+)", "img_$1", &ctx).unwrap(),
+            re.replace_all(&ctx.stem, "img_$1").into_owned(),
             "file_img_42"
         );
     }
@@ -49,7 +36,8 @@ mod tests {
     #[test]
     fn replace_literal() {
         let ctx = make_ctx("hello_world");
-        assert_eq!(apply_regex_replace(r"_", "-", &ctx).unwrap(), "hello-world");
+        let re = ctx.get_regex(r"_").unwrap();
+        assert_eq!(re.replace_all(&ctx.stem, "-").into_owned(), "hello-world");
     }
 
     // --- Multiple occurrences ---
@@ -57,7 +45,8 @@ mod tests {
     #[test]
     fn multiple_matches() {
         let ctx = make_ctx("a1b2c3");
-        assert_eq!(apply_regex_replace(r"\d", "X", &ctx).unwrap(), "aXbXcX");
+        let re = ctx.get_regex(r"\d").unwrap();
+        assert_eq!(re.replace_all(&ctx.stem, "X").into_owned(), "aXbXcX");
     }
 
     // --- No match ---
@@ -65,7 +54,8 @@ mod tests {
     #[test]
     fn no_match() {
         let ctx = make_ctx("hello");
-        assert_eq!(apply_regex_replace(r"\d+", "num", &ctx).unwrap(), "hello");
+        let re = ctx.get_regex(r"\d+").unwrap();
+        assert_eq!(re.replace_all(&ctx.stem, "num").into_owned(), "hello");
     }
 
     // --- Anchors ---
@@ -73,16 +63,15 @@ mod tests {
     #[test]
     fn anchored_at_start() {
         let ctx = make_ctx("photo_001");
-        assert_eq!(
-            apply_regex_replace(r"^photo", "img", &ctx).unwrap(),
-            "img_001"
-        );
+        let re = ctx.get_regex(r"^photo").unwrap();
+        assert_eq!(re.replace_all(&ctx.stem, "img").into_owned(), "img_001");
     }
 
     #[test]
     fn anchored_at_end() {
         let ctx = make_ctx("file_001");
-        assert_eq!(apply_regex_replace(r"_\d+$", "", &ctx).unwrap(), "file");
+        let re = ctx.get_regex(r"_\d+$").unwrap();
+        assert_eq!(re.replace_all(&ctx.stem, "").into_owned(), "file");
     }
 
     // --- Complex patterns ---
@@ -90,8 +79,9 @@ mod tests {
     #[test]
     fn capture_and_rearrange() {
         let ctx = make_ctx("2024-06-15_photo");
+        let re = ctx.get_regex(r"(\d{4})-(\d{2})-(\d{2})").unwrap();
         assert_eq!(
-            apply_regex_replace(r"(\d{4})-(\d{2})-(\d{2})", "$3-$2-$1", &ctx).unwrap(),
+            re.replace_all(&ctx.stem, "$3-$2-$1").into_owned(),
             "15-06-2024_photo"
         );
     }
@@ -99,10 +89,8 @@ mod tests {
     #[test]
     fn case_insensitive_pattern() {
         let ctx = make_ctx("Hello_World");
-        assert_eq!(
-            apply_regex_replace(r"(?i)hello", "hi", &ctx).unwrap(),
-            "hi_World"
-        );
+        let re = ctx.get_regex(r"(?i)hello").unwrap();
+        assert_eq!(re.replace_all(&ctx.stem, "hi").into_owned(), "hi_World");
     }
 
     // --- Edge cases ---
@@ -110,14 +98,16 @@ mod tests {
     #[test]
     fn empty_replacement() {
         let ctx = make_ctx("file_42_test");
-        assert_eq!(apply_regex_replace(r"_\d+", "", &ctx).unwrap(), "file_test");
+        let re = ctx.get_regex(r"_\d+").unwrap();
+        assert_eq!(re.replace_all(&ctx.stem, "").into_owned(), "file_test");
     }
 
     #[test]
     fn empty_stem() {
         let ctx = make_ctx("");
+        let re = ctx.get_regex(r".*").unwrap();
         assert_eq!(
-            apply_regex_replace(r".*", "replaced", &ctx).unwrap(),
+            re.replace_all(&ctx.stem, "replaced").into_owned(),
             "replaced"
         );
     }
@@ -127,13 +117,13 @@ mod tests {
     #[test]
     fn invalid_regex() {
         let ctx = make_ctx("file");
-        assert!(apply_regex_replace(r"[", "x", &ctx).is_err());
+        assert!(ctx.get_regex(r"[").is_err());
     }
 
     #[test]
     fn invalid_regex_error_message() {
         let ctx = make_ctx("file");
-        let err = apply_regex_replace(r"[", "x", &ctx).unwrap_err();
+        let err = ctx.get_regex(r"[").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("["));
         assert!(msg.contains("Invalid regex pattern"));

@@ -6,11 +6,14 @@ mod prefix_suffix;
 mod regex_replace;
 mod remove_text;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use crate::error::{NomforgeError, Result};
 
 /// Metadata about a file being renamed.
 #[derive(Debug, Clone)]
@@ -21,20 +24,50 @@ pub struct FileMetadata {
 }
 
 /// Context passed to each rename rule during transformation.
-#[derive(Debug, Clone)]
-pub struct RenameContext {
+pub struct RenameContext<'a> {
     /// Full original filename (e.g. "photo_001.jpg")
-    pub filename: String,
+    pub filename: &'a str,
     /// Filename without extension (e.g. "photo_001")
     pub stem: String,
     /// Extension without dot (e.g. "jpg")
     pub extension: String,
     /// Parent directory path
-    pub parent_dir: PathBuf,
+    pub parent_dir: &'a PathBuf,
     /// 0-based index of this file in the batch
     pub counter: usize,
     /// File metadata
     pub metadata: FileMetadata,
+    /// Cache of compiled regexes (optional, for reuse across rules)
+    pub regex_cache: Option<&'a HashMap<String, OnceLock<Regex>>>,
+}
+
+impl<'a> RenameContext<'a> {
+    /// Get or compile a regex pattern, using the cache if available.
+    pub fn get_regex(&self, pattern: &str) -> Result<Regex> {
+        if let Some(cache) = self.regex_cache {
+            let lock = cache
+                .get(pattern)
+                .ok_or_else(|| NomforgeError::InvalidRegex {
+                    pattern: pattern.to_string(),
+                    reason: "pattern not found in cache".to_string(),
+                })?;
+            if let Some(re) = lock.get() {
+                return Ok(re.clone());
+            }
+            // Compile and store the regex
+            let re = Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
+                pattern: pattern.to_string(),
+                reason: e.to_string(),
+            })?;
+            let _ = lock.set(re);
+            return Ok(lock.get().unwrap().clone());
+        }
+        // No cache available, compile directly
+        Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
+            pattern: pattern.to_string(),
+            reason: e.to_string(),
+        })
+    }
 }
 
 /// Case transformation mode.
@@ -108,7 +141,10 @@ impl RenameRule {
             Self::RegexReplace {
                 pattern,
                 replacement,
-            } => regex_replace::apply_regex_replace(pattern, replacement, ctx),
+            } => {
+                let re = ctx.get_regex(pattern)?;
+                Ok(re.replace_all(&ctx.stem, replacement).into_owned())
+            }
         }
     }
 }
