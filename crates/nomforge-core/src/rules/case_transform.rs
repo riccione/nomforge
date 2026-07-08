@@ -34,24 +34,21 @@ fn title_case(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RenameContext, RenameRule};
+    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(stem: &str) -> RenameContext<'static> {
-        use std::sync::LazyLock;
-        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
+    fn make_ctx(stem: &str) -> RenameContext {
         RenameContext {
-            filename: "file.txt",
+            filename: format!("{}.txt", stem),
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: &PARENT,
+            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
-            regex_cache: None,
         }
     }
 
@@ -169,20 +166,23 @@ mod tests {
     fn via_enum_upper() {
         let rule = RenameRule::CaseTransform(Case::Upper);
         let ctx = make_ctx("hello");
-        assert_eq!(rule.apply(&ctx).unwrap(), "HELLO");
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "HELLO");
     }
 
     #[test]
     fn via_enum_lower() {
         let rule = RenameRule::CaseTransform(Case::Lower);
         let ctx = make_ctx("HELLO");
-        assert_eq!(rule.apply(&ctx).unwrap(), "hello");
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "hello");
     }
 
     #[test]
     fn via_enum_title() {
         let rule = RenameRule::CaseTransform(Case::Title);
         let ctx = make_ctx("hello world");
-        assert_eq!(rule.apply(&ctx).unwrap(), "Hello World");
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "Hello World");
     }
 }

@@ -24,33 +24,49 @@ pub struct FileMetadata {
 }
 
 /// Context passed to each rename rule during transformation.
-pub struct RenameContext<'a> {
+#[derive(Debug, Clone)]
+pub struct RenameContext {
     /// Full original filename (e.g. "photo_001.jpg")
-    pub filename: &'a str,
+    pub filename: String,
     /// Filename without extension (e.g. "photo_001")
     pub stem: String,
     /// Extension without dot (e.g. "jpg")
     pub extension: String,
     /// Parent directory path
-    pub parent_dir: &'a PathBuf,
+    pub parent_dir: PathBuf,
     /// 0-based index of this file in the batch
     pub counter: usize,
     /// File metadata
     pub metadata: FileMetadata,
-    /// Cache of compiled regexes (optional, for reuse across rules)
-    pub regex_cache: Option<&'a HashMap<String, OnceLock<Regex>>>,
 }
 
-impl<'a> RenameContext<'a> {
-    /// Get or compile a regex pattern, using the cache if available.
+/// Wrapper for pre-compiled regex cache.
+pub struct RegexCache {
+    cache: HashMap<String, OnceLock<Regex>>,
+}
+
+impl RegexCache {
+    /// Create a new empty cache.
+    pub fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+        }
+    }
+
+    /// Pre-compile patterns from rules.
+    pub fn from_rules(rules: &[RenameRule]) -> Self {
+        let mut cache = HashMap::new();
+        for rule in rules {
+            if let RenameRule::RegexReplace { pattern, .. } = rule {
+                cache.entry(pattern.clone()).or_insert_with(OnceLock::new);
+            }
+        }
+        Self { cache }
+    }
+
+    /// Get or compile a regex pattern.
     pub fn get_regex(&self, pattern: &str) -> Result<Regex> {
-        if let Some(cache) = self.regex_cache {
-            let lock = cache
-                .get(pattern)
-                .ok_or_else(|| NomforgeError::InvalidRegex {
-                    pattern: pattern.to_string(),
-                    reason: "pattern not found in cache".to_string(),
-                })?;
+        if let Some(lock) = self.cache.get(pattern) {
             if let Some(re) = lock.get() {
                 return Ok(re.clone());
             }
@@ -62,11 +78,17 @@ impl<'a> RenameContext<'a> {
             let _ = lock.set(re);
             return Ok(lock.get().unwrap().clone());
         }
-        // No cache available, compile directly
+        // Pattern not in cache, compile directly (for ad-hoc usage)
         Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
             pattern: pattern.to_string(),
             reason: e.to_string(),
         })
+    }
+}
+
+impl Default for RegexCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -120,7 +142,7 @@ impl RenameRule {
     ///
     /// Rules operate on the stem (filename without extension) unless otherwise noted.
     /// The extension is preserved separately and reattached by the engine.
-    pub fn apply(&self, ctx: &RenameContext) -> Result<String> {
+    pub fn apply(&self, ctx: &RenameContext, cache: &RegexCache) -> Result<String> {
         match self {
             Self::FindReplace { find, replace } => {
                 find_replace::apply_find_replace(find, replace, ctx)
@@ -142,7 +164,7 @@ impl RenameRule {
                 pattern,
                 replacement,
             } => {
-                let re = ctx.get_regex(pattern)?;
+                let re = cache.get_regex(pattern)?;
                 Ok(re.replace_all(&ctx.stem, replacement).into_owned())
             }
         }

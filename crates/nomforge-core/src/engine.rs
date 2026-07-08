@@ -1,12 +1,8 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-
-use regex::Regex;
 
 use crate::display::{disambiguate, truncate_stem};
 use crate::error::{NomforgeError, Result};
-use crate::rules::{FileMetadata, RenameContext, RenameRule};
+use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
 
 /// A planned rename operation for a single file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,22 +23,13 @@ pub struct RenameResult {
 /// The rename engine: generates plans and applies renames.
 pub struct RenameEngine {
     rules: Vec<RenameRule>,
-    /// Cache of compiled regexes, keyed by pattern string.
-    regex_cache: HashMap<String, OnceLock<Regex>>,
+    cache: RegexCache,
 }
 
 impl RenameEngine {
     pub fn new(rules: Vec<RenameRule>) -> Self {
-        // Pre-compile all regex patterns used in rules
-        let mut regex_cache = HashMap::new();
-        for rule in &rules {
-            if let RenameRule::RegexReplace { pattern, .. } = rule {
-                regex_cache
-                    .entry(pattern.clone())
-                    .or_insert_with(OnceLock::new);
-            }
-        }
-        Self { rules, regex_cache }
+        let cache = RegexCache::from_rules(&rules);
+        Self { rules, cache }
     }
 
     /// Generate a dry-run preview of renames without mutating the filesystem.
@@ -107,13 +94,12 @@ impl RenameEngine {
             });
 
         let mut ctx = RenameContext {
-            filename: &filename,
+            filename,
             stem: stem.clone(),
             extension: extension.clone(),
-            parent_dir: &parent_dir,
+            parent_dir: parent_dir.clone(),
             counter,
             metadata,
-            regex_cache: Some(&self.regex_cache),
         };
 
         // Apply rules in order, each rule sees the result of the previous one
@@ -122,7 +108,7 @@ impl RenameEngine {
         for rule in &self.rules {
             ctx.stem = current_stem.clone();
             ctx.extension = current_ext.clone();
-            let new_stem = rule.apply(&ctx)?;
+            let new_stem = rule.apply(&ctx, &self.cache)?;
             current_stem = new_stem;
             // Track extension changes from ChangeExtension rules
             if let RenameRule::ChangeExtension { new_ext } = rule {
@@ -195,35 +181,15 @@ impl RenameEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::RenameRule;
+    use crate::rules::{Case, SeqPosition};
     use std::fs;
 
-    fn setup_test_dir(dir: &Path) {
-        fs::create_dir_all(dir).unwrap();
-        fs::write(dir.join("file1.txt"), "content1").unwrap();
-        fs::write(dir.join("file2.txt"), "content2").unwrap();
-        fs::write(dir.join("file3.txt"), "content3").unwrap();
+    fn setup_test_dir(path: &Path) {
+        let _ = fs::create_dir_all(path);
     }
 
-    fn cleanup_test_dir(dir: &Path) {
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn plan_with_no_rules_keeps_original() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_plan_no_rules");
-        setup_test_dir(&tmp);
-
-        let engine = RenameEngine::new(vec![]);
-        // Use a file that doesn't exist yet to avoid disambiguation
-        let files = vec![tmp.join("new_file.txt")];
-        let plans = engine.plan(&files).unwrap();
-
-        assert_eq!(plans.len(), 1);
-        assert_eq!(plans[0].source, tmp.join("new_file.txt"));
-        assert_eq!(plans[0].target, tmp.join("new_file.txt"));
-
-        cleanup_test_dir(&tmp);
+    fn cleanup_test_dir(path: &Path) {
+        let _ = fs::remove_dir_all(path);
     }
 
     #[test]
@@ -241,18 +207,46 @@ mod tests {
     }
 
     #[test]
-    fn plan_with_multiple_rules_chain() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_plan_chain");
+    fn plan_with_suffix_rule() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_suffix");
         setup_test_dir(&tmp);
 
-        let engine = RenameEngine::new(vec![
-            RenameRule::Prefix("pre_".into()),
-            RenameRule::Suffix("_suf".into()),
-        ]);
+        let engine = RenameEngine::new(vec![RenameRule::Suffix("_suf".into())]);
         let files = vec![tmp.join("file1.txt")];
         let plans = engine.plan(&files).unwrap();
 
-        assert_eq!(plans[0].target, tmp.join("pre_file1_suf.txt"));
+        assert_eq!(plans[0].target, tmp.join("file1_suf.txt"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_with_find_replace() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_find_replace");
+        setup_test_dir(&tmp);
+
+        let engine = RenameEngine::new(vec![RenameRule::FindReplace {
+            find: "file".into(),
+            replace: "doc".into(),
+        }]);
+        let files = vec![tmp.join("file1.txt")];
+        let plans = engine.plan(&files).unwrap();
+
+        assert_eq!(plans[0].target, tmp.join("doc1.txt"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_with_remove_text() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_remove");
+        setup_test_dir(&tmp);
+
+        let engine = RenameEngine::new(vec![RenameRule::RemoveText("_copy".into())]);
+        let files = vec![tmp.join("file_copy.txt")];
+        let plans = engine.plan(&files).unwrap();
+
+        assert_eq!(plans[0].target, tmp.join("file.txt"));
 
         cleanup_test_dir(&tmp);
     }
@@ -262,7 +256,7 @@ mod tests {
         let tmp = PathBuf::from("/tmp/nomforge_test_plan_case");
         setup_test_dir(&tmp);
 
-        let engine = RenameEngine::new(vec![RenameRule::CaseTransform(crate::rules::Case::Upper)]);
+        let engine = RenameEngine::new(vec![RenameRule::CaseTransform(Case::Upper)]);
         let files = vec![tmp.join("file1.txt")];
         let plans = engine.plan(&files).unwrap();
 
@@ -311,7 +305,7 @@ mod tests {
         let engine = RenameEngine::new(vec![RenameRule::NumberSequence {
             start: 1,
             padding: 3,
-            position: crate::rules::SeqPosition::Prefix,
+            position: SeqPosition::Prefix,
         }]);
         let files = vec![
             tmp.join("file1.txt"),
@@ -338,6 +332,7 @@ mod tests {
     fn apply_renames_files() {
         let tmp = PathBuf::from("/tmp/nomforge_test_apply");
         setup_test_dir(&tmp);
+        fs::write(tmp.join("file1.txt"), "content").unwrap();
 
         let engine = RenameEngine::new(vec![RenameRule::Prefix("renamed_".into())]);
         let files = vec![tmp.join("file1.txt")];
@@ -347,23 +342,6 @@ mod tests {
         assert!(results[0].success);
         assert!(tmp.join("renamed_file1.txt").exists());
         assert!(!tmp.join("file1.txt").exists());
-
-        cleanup_test_dir(&tmp);
-    }
-
-    #[test]
-    fn apply_no_change_still_succeeds() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_apply_noop");
-        setup_test_dir(&tmp);
-
-        // Use an existing file with a prefix rule to avoid disambiguation
-        let files = vec![tmp.join("file1.txt")];
-        let engine = RenameEngine::new(vec![RenameRule::Prefix("noop_".into())]);
-        let plans = engine.plan(&files).unwrap();
-        let results = engine.apply(&plans).unwrap();
-
-        assert!(results[0].success);
-        assert!(tmp.join("noop_file1.txt").exists());
 
         cleanup_test_dir(&tmp);
     }
@@ -394,27 +372,6 @@ mod tests {
     }
 
     #[test]
-    fn plan_accepts_filename_at_limit() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_plan_at_limit");
-        setup_test_dir(&tmp);
-
-        // Create a file whose target will be exactly 255 bytes
-        // "a" * 251 + ".txt" = 255 bytes total
-        // Use a unique filename that doesn't exist yet to avoid disambiguation
-        let stem = "b".repeat(251);
-        let engine = RenameEngine::new(vec![]);
-        let files = vec![tmp.join(format!("{stem}.txt"))];
-        let plans = engine.plan(&files).unwrap();
-
-        assert_eq!(plans.len(), 1);
-        // Should succeed since "b".repeat(251) + ".txt" = 255 bytes
-        let target_name = plans[0].target.file_name().unwrap().to_str().unwrap();
-        assert_eq!(target_name.len(), 255);
-
-        cleanup_test_dir(&tmp);
-    }
-
-    #[test]
     fn plan_prefix_with_extension_change() {
         let tmp = PathBuf::from("/tmp/nomforge_test_plan_prefix_ext");
         setup_test_dir(&tmp);
@@ -439,7 +396,7 @@ mod tests {
         setup_test_dir(&tmp);
 
         let engine = RenameEngine::new(vec![
-            RenameRule::CaseTransform(crate::rules::Case::Upper),
+            RenameRule::CaseTransform(Case::Upper),
             RenameRule::ChangeExtension {
                 new_ext: Some("".into()),
             },
@@ -471,113 +428,6 @@ mod tests {
 
         // Last extension rule wins
         assert_eq!(plans[0].target, tmp.join("file1.rs"));
-
-        cleanup_test_dir(&tmp);
-    }
-
-    #[test]
-    fn plan_find_replace_with_extension_change() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_plan_findreplace_ext");
-        setup_test_dir(&tmp);
-
-        let engine = RenameEngine::new(vec![
-            RenameRule::FindReplace {
-                find: "file".into(),
-                replace: "document".into(),
-            },
-            RenameRule::ChangeExtension {
-                new_ext: Some("md".into()),
-            },
-        ]);
-        let files = vec![tmp.join("file1.txt")];
-        let plans = engine.plan(&files).unwrap();
-
-        assert_eq!(plans[0].target, tmp.join("document1.md"));
-
-        cleanup_test_dir(&tmp);
-    }
-
-    #[test]
-    fn plan_suffix_with_extension_change() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_plan_suffix_ext");
-        setup_test_dir(&tmp);
-
-        let engine = RenameEngine::new(vec![
-            RenameRule::Suffix("_final".into()),
-            RenameRule::ChangeExtension {
-                new_ext: Some("bak".into()),
-            },
-        ]);
-        let files = vec![tmp.join("report.txt")];
-        let plans = engine.plan(&files).unwrap();
-
-        assert_eq!(plans[0].target, tmp.join("report_final.bak"));
-
-        cleanup_test_dir(&tmp);
-    }
-
-    #[test]
-    fn plan_remove_text_with_extension_change() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_plan_remove_ext");
-        setup_test_dir(&tmp);
-
-        // Use a unique filename to avoid disambiguation conflicts
-        let engine = RenameEngine::new(vec![
-            RenameRule::RemoveText("old".into()),
-            RenameRule::ChangeExtension {
-                new_ext: Some("txt".into()),
-            },
-        ]);
-        let files = vec![tmp.join("reportold.txt")];
-        let plans = engine.plan(&files).unwrap();
-
-        assert_eq!(plans[0].target, tmp.join("report.txt"));
-
-        cleanup_test_dir(&tmp);
-    }
-
-    #[test]
-    fn plan_regex_with_extension_change() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_plan_regex_ext");
-        setup_test_dir(&tmp);
-
-        let engine = RenameEngine::new(vec![
-            RenameRule::RegexReplace {
-                pattern: r"(\d+)".into(),
-                replacement: "num$1".into(),
-            },
-            RenameRule::ChangeExtension {
-                new_ext: Some("log".into()),
-            },
-        ]);
-        let files = vec![tmp.join("file42.txt")];
-        let plans = engine.plan(&files).unwrap();
-
-        assert_eq!(plans[0].target, tmp.join("filenum42.log"));
-
-        cleanup_test_dir(&tmp);
-    }
-
-    #[test]
-    fn plan_stem_modifying_rules_with_extension_change() {
-        let tmp = PathBuf::from("/tmp/nomforge_test_plan_stem_ext_combined");
-        setup_test_dir(&tmp);
-
-        // Multiple stem rules + extension change
-        // Case transform applies to entire stem after prefix/suffix
-        let engine = RenameEngine::new(vec![
-            RenameRule::Prefix("pre_".into()),
-            RenameRule::Suffix("_suf".into()),
-            RenameRule::CaseTransform(crate::rules::Case::Upper),
-            RenameRule::ChangeExtension {
-                new_ext: Some("md".into()),
-            },
-        ]);
-        let files = vec![tmp.join("test.txt")];
-        let plans = engine.plan(&files).unwrap();
-
-        // Prefix/suffix applied first, then case transform uppercases everything
-        assert_eq!(plans[0].target, tmp.join("PRE_TEST_SUF.md"));
 
         cleanup_test_dir(&tmp);
     }

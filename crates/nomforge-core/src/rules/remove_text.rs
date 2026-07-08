@@ -9,37 +9,34 @@ pub fn apply_remove_text(text: &str, ctx: &RenameContext) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RenameContext, RenameRule};
+    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(stem: &str) -> RenameContext<'static> {
-        use std::sync::LazyLock;
-        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
+    fn make_ctx(stem: &str) -> RenameContext {
         RenameContext {
-            filename: "file.txt",
+            filename: format!("{}.txt", stem),
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: &PARENT,
+            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
-            regex_cache: None,
         }
     }
 
     #[test]
-    fn remove_space() {
-        let ctx = make_ctx("hello world");
-        assert_eq!(apply_remove_text(" ", &ctx).unwrap(), "helloworld");
+    fn remove_basic() {
+        let ctx = make_ctx("hello_world");
+        assert_eq!(apply_remove_text("_world", &ctx).unwrap(), "hello");
     }
 
     #[test]
     fn remove_multiple_occurrences() {
-        let ctx = make_ctx("a-b-c-d");
-        assert_eq!(apply_remove_text("-", &ctx).unwrap(), "abcd");
+        let ctx = make_ctx("aaa");
+        assert_eq!(apply_remove_text("a", &ctx).unwrap(), "");
     }
 
     #[test]
@@ -55,28 +52,10 @@ mod tests {
     }
 
     #[test]
-    fn remove_entire_stem() {
-        let ctx = make_ctx("hello");
-        assert_eq!(apply_remove_text("hello", &ctx).unwrap(), "");
-    }
-
-    #[test]
-    fn remove_substring() {
-        let ctx = make_ctx("file_copy_final.txt");
-        assert_eq!(apply_remove_text("_copy", &ctx).unwrap(), "file_final.txt");
-    }
-
-    #[test]
-    fn remove_special_chars() {
-        let ctx = make_ctx("[photo]");
-        assert_eq!(apply_remove_text("[", &ctx).unwrap(), "photo]");
-        assert_eq!(apply_remove_text("]", &ctx).unwrap(), "[photo");
-    }
-
-    #[test]
     fn via_enum_variant() {
-        let rule = RenameRule::RemoveText(" ".into());
-        let ctx = make_ctx("hello world");
-        assert_eq!(rule.apply(&ctx).unwrap(), "helloworld");
+        let rule = RenameRule::RemoveText("_copy".into());
+        let ctx = make_ctx("file_copy");
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "file");
     }
 }

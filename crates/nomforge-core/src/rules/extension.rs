@@ -48,24 +48,21 @@ pub fn apply_extension(current_ext: &str, new_ext: &Option<String>) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RenameContext, RenameRule};
+    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(ext: &str) -> RenameContext<'static> {
-        use std::sync::LazyLock;
-        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
+    fn make_ctx(ext: &str) -> RenameContext {
         RenameContext {
-            filename: "file.txt",
+            filename: format!("file.{}", ext),
             stem: "file".to_string(),
             extension: ext.to_string(),
-            parent_dir: &PARENT,
+            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
-            regex_cache: None,
         }
     }
 
@@ -127,15 +124,17 @@ mod tests {
             new_ext: Some("png".into()),
         };
         let ctx = make_ctx("jpg");
+        let cache = RegexCache::new();
         // The apply() method returns the stem unchanged for ChangeExtension
-        assert_eq!(rule.apply(&ctx).unwrap(), "file");
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "file");
     }
 
     #[test]
     fn via_enum_keep_returns_stem_unchanged() {
         let rule = RenameRule::ChangeExtension { new_ext: None };
         let ctx = make_ctx("jpg");
-        assert_eq!(rule.apply(&ctx).unwrap(), "file");
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "file");
     }
 
     // --- Validation tests ---
