@@ -55,13 +55,13 @@ pub struct RenameArgs {
     #[arg(long)]
     pub case: Option<String>,
 
-    /// Counter start value
-    #[arg(long, default_value_t = 1)]
-    pub counter_start: usize,
+    /// Counter start value (enables counter rule when set)
+    #[arg(long)]
+    pub counter_start: Option<usize>,
 
-    /// Counter zero-padding width
-    #[arg(long, default_value_t = 0)]
-    pub counter_padding: usize,
+    /// Counter zero-padding width (enables counter rule when set)
+    #[arg(long)]
+    pub counter_padding: Option<usize>,
 
     /// Counter position: prefix, suffix, replace
     #[arg(long, default_value = "prefix")]
@@ -134,8 +134,8 @@ mod tests {
             suffix: None,
             remove: None,
             case: None,
-            counter_start: 1,
-            counter_padding: 0,
+            counter_start: None,
+            counter_padding: None,
             counter_position: "prefix".into(),
             ext: None,
             include: None,
@@ -147,8 +147,8 @@ mod tests {
             history_file: None,
             verbose: false,
         };
-        assert_eq!(args.counter_start, 1);
-        assert_eq!(args.counter_padding, 0);
+        assert!(args.counter_start.is_none());
+        assert!(args.counter_padding.is_none());
         assert!(!args.apply);
     }
 }
