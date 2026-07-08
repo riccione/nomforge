@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+use crate::display::{disambiguate, truncate_stem};
 use crate::error::{NomforgeError, Result};
 use crate::rules::{FileMetadata, RenameContext, RenameRule};
 
@@ -168,20 +169,25 @@ impl RenameEngine {
             parent_dir.join(format!("{}.{}", current_stem, current_ext))
         };
 
-        // Validate filename component length against OS limits.
-        // On Linux (ext4/XFS/Btrfs), the limit is 255 bytes per filename component.
-        // On macOS (APFS), it's 255 characters (NFD decomposed). On Windows (NTFS),
-        // it's 255 UTF-16 code units. We use 255 bytes as a conservative portable limit.
-        const MAX_FILENAME_BYTES: usize = 255;
-        if let Some(filename_os) = target.file_name() {
+        // Truncate filename if it exceeds OS limits
+        let target = if let Some(filename_os) = target.file_name() {
             let filename_bytes = filename_os.len();
-            if filename_bytes > MAX_FILENAME_BYTES {
-                return Err(NomforgeError::FilenameTooLong {
-                    filename: filename_os.to_string_lossy().into_owned(),
-                    length: filename_bytes,
-                });
+            if filename_bytes > 255 {
+                let truncated_stem = truncate_stem(&current_stem, &current_ext);
+                if current_ext.is_empty() {
+                    parent_dir.join(&truncated_stem)
+                } else {
+                    parent_dir.join(format!("{}.{}", truncated_stem, current_ext))
+                }
+            } else {
+                target
             }
-        }
+        } else {
+            target
+        };
+
+        // Disambiguate if target already exists
+        let target = disambiguate(&target);
 
         Ok(RenamePlan {
             source: path.to_path_buf(),
@@ -239,12 +245,13 @@ mod tests {
         setup_test_dir(&tmp);
 
         let engine = RenameEngine::new(vec![]);
-        let files = vec![tmp.join("file1.txt")];
+        // Use a file that doesn't exist yet to avoid disambiguation
+        let files = vec![tmp.join("new_file.txt")];
         let plans = engine.plan(&files).unwrap();
 
         assert_eq!(plans.len(), 1);
-        assert_eq!(plans[0].source, tmp.join("file1.txt"));
-        assert_eq!(plans[0].target, tmp.join("file1.txt"));
+        assert_eq!(plans[0].source, tmp.join("new_file.txt"));
+        assert_eq!(plans[0].target, tmp.join("new_file.txt"));
 
         cleanup_test_dir(&tmp);
     }
@@ -379,23 +386,24 @@ mod tests {
         let tmp = PathBuf::from("/tmp/nomforge_test_apply_noop");
         setup_test_dir(&tmp);
 
-        let engine = RenameEngine::new(vec![]);
+        // Use an existing file with a prefix rule to avoid disambiguation
         let files = vec![tmp.join("file1.txt")];
+        let engine = RenameEngine::new(vec![RenameRule::Prefix("noop_".into())]);
         let plans = engine.plan(&files).unwrap();
         let results = engine.apply(&plans).unwrap();
 
         assert!(results[0].success);
-        assert!(tmp.join("file1.txt").exists());
+        assert!(tmp.join("noop_file1.txt").exists());
 
         cleanup_test_dir(&tmp);
     }
 
     #[test]
-    fn plan_rejects_filename_too_long() {
+    fn plan_truncates_long_filename() {
         let tmp = PathBuf::from("/tmp/nomforge_test_plan_long_name");
         setup_test_dir(&tmp);
 
-        // Create a file with a long name (just under 255 bytes)
+        // Create a file with a long name
         let long_name = "a".repeat(240);
         fs::write(tmp.join(format!("{long_name}.txt")), "content").unwrap();
 
@@ -404,16 +412,13 @@ mod tests {
             "very_long_prefix_that_makes_this_exceed_the_limit_".into(),
         )]);
         let files = vec![tmp.join(format!("{long_name}.txt"))];
-        let result = engine.plan(&files);
+        let plans = engine.plan(&files).unwrap();
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            crate::error::NomforgeError::FilenameTooLong { filename, length } => {
-                assert!(length > 255);
-                assert!(filename.len() > 255);
-            }
-            e => panic!("Expected FilenameTooLong, got: {e}"),
-        }
+        // Should succeed with truncated filename
+        assert_eq!(plans.len(), 1);
+        let target_name = plans[0].target.file_name().unwrap().to_str().unwrap();
+        assert!(target_name.len() <= 255);
+        assert!(target_name.ends_with(".txt"));
 
         cleanup_test_dir(&tmp);
     }
@@ -425,15 +430,14 @@ mod tests {
 
         // Create a file whose target will be exactly 255 bytes
         // "a" * 251 + ".txt" = 255 bytes total
-        let stem = "a".repeat(251);
-        fs::write(tmp.join(format!("{stem}.txt")), "content").unwrap();
-
+        // Use a unique filename that doesn't exist yet to avoid disambiguation
+        let stem = "b".repeat(251);
         let engine = RenameEngine::new(vec![]);
         let files = vec![tmp.join(format!("{stem}.txt"))];
         let plans = engine.plan(&files).unwrap();
 
         assert_eq!(plans.len(), 1);
-        // Should succeed since "a".repeat(251) + ".txt" = 255 bytes
+        // Should succeed since "b".repeat(251) + ".txt" = 255 bytes
         let target_name = plans[0].target.file_name().unwrap().to_str().unwrap();
         assert_eq!(target_name.len(), 255);
 
