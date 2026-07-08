@@ -27,7 +27,7 @@ pub fn truncate_stem(stem: &str, ext: &str) -> String {
     // Truncate at character boundary to avoid panicking on multi-byte UTF-8
     let truncated_byte_idx = stem
         .char_indices()
-        .take_while(|(byte_idx, _)| *byte_idx + 1 <= available)
+        .take_while(|(byte_idx, _)| *byte_idx < available)
         .last()
         .map(|(byte_idx, ch)| byte_idx + ch.len_utf8())
         .unwrap_or(0);
