@@ -9,24 +9,21 @@ pub fn apply_find_replace(find: &str, replace: &str, ctx: &RenameContext) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RenameContext, RenameRule};
+    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(stem: &str) -> RenameContext<'static> {
-        use std::sync::LazyLock;
-        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
+    fn make_ctx(stem: &str) -> RenameContext {
         RenameContext {
-            filename: "file.txt",
+            filename: format!("{}.txt", stem),
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: &PARENT,
+            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
-            regex_cache: None,
         }
     }
 
@@ -74,25 +71,23 @@ mod tests {
 
     #[test]
     fn via_enum_variant() {
-        use std::sync::LazyLock;
-        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
         let rule = RenameRule::FindReplace {
             find: "DSC".into(),
             replace: "photo".into(),
         };
         let ctx = RenameContext {
-            filename: "DSC_001.jpg",
+            filename: "DSC_001.jpg".into(),
             stem: "DSC_001".into(),
             extension: "jpg".into(),
-            parent_dir: &PARENT,
+            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
-            regex_cache: None,
         };
-        assert_eq!(rule.apply(&ctx).unwrap(), "photo_001");
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "photo_001");
     }
 }

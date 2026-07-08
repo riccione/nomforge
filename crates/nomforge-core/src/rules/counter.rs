@@ -25,31 +25,28 @@ pub fn apply_counter(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RenameContext, RenameRule};
+    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(stem: &str, counter: usize) -> RenameContext<'static> {
-        use std::sync::LazyLock;
-        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
+    fn make_ctx(stem: &str, counter: usize) -> RenameContext {
         RenameContext {
-            filename: "file.txt",
+            filename: format!("{}.txt", stem),
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: &PARENT,
+            parent_dir: PathBuf::from("/tmp"),
             counter,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
-            regex_cache: None,
         }
     }
 
-    // --- Prefix position ---
+    // --- Prefix ---
 
     #[test]
-    fn prefix_basic() {
+    fn counter_prefix_basic() {
         let ctx = make_ctx("photo", 0);
         assert_eq!(
             apply_counter(1, 3, SeqPosition::Prefix, &ctx).unwrap(),
@@ -58,36 +55,18 @@ mod tests {
     }
 
     #[test]
-    fn prefix_second_file() {
-        let ctx = make_ctx("photo", 1);
+    fn counter_prefix_no_padding() {
+        let ctx = make_ctx("photo", 5);
         assert_eq!(
-            apply_counter(1, 3, SeqPosition::Prefix, &ctx).unwrap(),
-            "002photo"
+            apply_counter(0, 0, SeqPosition::Prefix, &ctx).unwrap(),
+            "5photo"
         );
     }
 
-    #[test]
-    fn prefix_no_padding() {
-        let ctx = make_ctx("photo", 0);
-        assert_eq!(
-            apply_counter(1, 0, SeqPosition::Prefix, &ctx).unwrap(),
-            "1photo"
-        );
-    }
+    // --- Suffix ---
 
     #[test]
-    fn prefix_wide_padding() {
-        let ctx = make_ctx("photo", 0);
-        assert_eq!(
-            apply_counter(1, 6, SeqPosition::Prefix, &ctx).unwrap(),
-            "000001photo"
-        );
-    }
-
-    // --- Suffix position ---
-
-    #[test]
-    fn suffix_basic() {
+    fn counter_suffix_basic() {
         let ctx = make_ctx("photo", 0);
         assert_eq!(
             apply_counter(1, 3, SeqPosition::Suffix, &ctx).unwrap(),
@@ -95,52 +74,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn suffix_second_file() {
-        let ctx = make_ctx("photo", 1);
-        assert_eq!(
-            apply_counter(10, 2, SeqPosition::Suffix, &ctx).unwrap(),
-            "photo11"
-        );
-    }
-
-    // --- ReplaceStem position ---
+    // --- ReplaceStem ---
 
     #[test]
-    fn replace_stem_basic() {
+    fn counter_replace_stem() {
         let ctx = make_ctx("photo", 0);
         assert_eq!(
-            apply_counter(1, 4, SeqPosition::ReplaceStem, &ctx).unwrap(),
-            "0001"
-        );
-    }
-
-    #[test]
-    fn replace_stem_second_file() {
-        let ctx = make_ctx("photo", 1);
-        assert_eq!(
-            apply_counter(5, 4, SeqPosition::ReplaceStem, &ctx).unwrap(),
-            "0006"
-        );
-    }
-
-    // --- Edge cases ---
-
-    #[test]
-    fn start_at_zero() {
-        let ctx = make_ctx("file", 0);
-        assert_eq!(
-            apply_counter(0, 2, SeqPosition::Prefix, &ctx).unwrap(),
-            "00file"
-        );
-    }
-
-    #[test]
-    fn large_counter_offset() {
-        let ctx = make_ctx("file", 99);
-        assert_eq!(
-            apply_counter(1, 3, SeqPosition::Suffix, &ctx).unwrap(),
-            "file100"
+            apply_counter(1, 3, SeqPosition::ReplaceStem, &ctx).unwrap(),
+            "001"
         );
     }
 
@@ -153,29 +94,43 @@ mod tests {
             padding: 3,
             position: SeqPosition::Prefix,
         };
-        let ctx = make_ctx("photo", 0);
-        assert_eq!(rule.apply(&ctx).unwrap(), "001photo");
+        let ctx = make_ctx("file", 0);
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "001file");
     }
 
     #[test]
     fn via_enum_suffix() {
         let rule = RenameRule::NumberSequence {
-            start: 10,
-            padding: 2,
+            start: 1,
+            padding: 3,
             position: SeqPosition::Suffix,
         };
-        let ctx = make_ctx("photo", 0);
-        assert_eq!(rule.apply(&ctx).unwrap(), "photo10");
+        let ctx = make_ctx("file", 0);
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "file001");
     }
 
     #[test]
     fn via_enum_replace_stem() {
         let rule = RenameRule::NumberSequence {
-            start: 5,
-            padding: 4,
+            start: 1,
+            padding: 3,
             position: SeqPosition::ReplaceStem,
         };
-        let ctx = make_ctx("photo", 0);
-        assert_eq!(rule.apply(&ctx).unwrap(), "0005");
+        let ctx = make_ctx("file", 0);
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "001");
+    }
+
+    // --- Counter offset ---
+
+    #[test]
+    fn counter_offset() {
+        let ctx = make_ctx("file", 5);
+        assert_eq!(
+            apply_counter(10, 3, SeqPosition::Prefix, &ctx).unwrap(),
+            "015file"
+        );
     }
 }

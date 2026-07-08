@@ -14,24 +14,21 @@ pub fn apply_suffix(suffix: &str, ctx: &RenameContext) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RenameContext, RenameRule};
+    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(stem: &str) -> RenameContext<'static> {
-        use std::sync::LazyLock;
-        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
+    fn make_ctx(stem: &str) -> RenameContext {
         RenameContext {
-            filename: "file.txt",
+            filename: format!("{}.txt", stem),
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: &PARENT,
+            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
-            regex_cache: None,
         }
     }
 
@@ -59,7 +56,8 @@ mod tests {
     fn prefix_via_enum() {
         let rule = RenameRule::Prefix("vacation_".into());
         let ctx = make_ctx("beach");
-        assert_eq!(rule.apply(&ctx).unwrap(), "vacation_beach");
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "vacation_beach");
     }
 
     // --- Suffix tests ---
@@ -86,36 +84,24 @@ mod tests {
     fn suffix_via_enum() {
         let rule = RenameRule::Suffix("_final".into());
         let ctx = make_ctx("report");
-        assert_eq!(rule.apply(&ctx).unwrap(), "report_final");
+        let cache = RegexCache::new();
+        assert_eq!(rule.apply(&ctx, &cache).unwrap(), "report_final");
     }
 
     // --- Combined prefix + suffix ---
 
     #[test]
     fn prefix_and_suffix_together() {
-        use std::sync::LazyLock;
-        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
         let prefix_rule = RenameRule::Prefix("pre_".into());
         let suffix_rule = RenameRule::Suffix("_suf".into());
-        let ctx = RenameContext {
-            filename: "file.txt",
-            stem: "file".into(),
-            extension: "txt".into(),
-            parent_dir: &PARENT,
-            counter: 0,
-            metadata: FileMetadata {
-                size: 0,
-                modified: None,
-                created: None,
-            },
-            regex_cache: None,
-        };
+        let ctx = make_ctx("file");
+        let cache = RegexCache::new();
 
-        let step1 = prefix_rule.apply(&ctx).unwrap();
+        let step1 = prefix_rule.apply(&ctx, &cache).unwrap();
         assert_eq!(step1, "pre_file");
 
         let ctx2 = RenameContext { stem: step1, ..ctx };
-        let step2 = suffix_rule.apply(&ctx2).unwrap();
+        let step2 = suffix_rule.apply(&ctx2, &cache).unwrap();
         assert_eq!(step2, "pre_file_suf");
     }
 }
