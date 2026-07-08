@@ -356,11 +356,105 @@ impl NomforgeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn app_default_state() {
         let app = NomforgeApp::default();
         assert!(app.state.dir.is_empty());
         assert_eq!(app.state.status, "Ready");
+    }
+
+    #[test]
+    fn do_apply_logs_renames_and_allows_undo() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+
+        // Create test files
+        fs::write(dir.join("file1.txt"), "content1").unwrap();
+        fs::write(dir.join("file2.txt"), "content2").unwrap();
+
+        // Set up undo log path
+        let undo_path = dir.join("undo_log.json");
+
+        let mut app = NomforgeApp {
+            state: State {
+                dir: dir.to_string_lossy().into_owned(),
+                prefix: "renamed_".into(),
+                history_file: undo_path.to_string_lossy().into_owned(),
+                ..Default::default()
+            },
+        };
+
+        // Scan files
+        app.scan_files();
+        assert_eq!(app.state.files.len(), 2);
+
+        // Build rules and plans
+        let rules = app.state.build_rules().unwrap();
+        let engine = nomforge_core::RenameEngine::new(rules);
+        let plans = engine.plan(&app.state.files).unwrap();
+        assert_eq!(plans.len(), 2);
+
+        let files = app.state.files.clone();
+
+        // Apply renames with undo logging
+        app.do_apply(plans, files);
+
+        // Verify renames succeeded
+        assert!(dir.join("renamed_file1.txt").exists());
+        assert!(dir.join("renamed_file2.txt").exists());
+        assert!(!dir.join("file1.txt").exists());
+        assert!(!dir.join("file2.txt").exists());
+        assert!(app.state.applied);
+        assert!(app.state.results.iter().all(|r| r.success));
+
+        // Verify undo log was created
+        assert!(undo_path.exists());
+        let log_content = fs::read_to_string(&undo_path).unwrap();
+        let log: nomforge_core::UndoLog = serde_json::from_str(&log_content).unwrap();
+        assert_eq!(log.batches.len(), 1);
+        assert_eq!(log.batches[0].operations.len(), 2);
+
+        // Perform undo
+        app.perform_undo();
+
+        // Verify files are restored
+        assert!(dir.join("file1.txt").exists());
+        assert!(dir.join("file2.txt").exists());
+        assert!(!dir.join("renamed_file1.txt").exists());
+        assert!(!dir.join("renamed_file2.txt").exists());
+    }
+
+    #[test]
+    fn do_apply_skips_undo_when_disabled() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+
+        fs::write(dir.join("file1.txt"), "content").unwrap();
+        let undo_path = dir.join("undo_log.json");
+
+        let mut app = NomforgeApp {
+            state: State {
+                dir: dir.to_string_lossy().into_owned(),
+                prefix: "test_".into(),
+                no_undo: true,
+                history_file: undo_path.to_string_lossy().into_owned(),
+                ..Default::default()
+            },
+        };
+
+        app.scan_files();
+        let rules = app.state.build_rules().unwrap();
+        let engine = nomforge_core::RenameEngine::new(rules);
+        let plans = engine.plan(&app.state.files).unwrap();
+        let files = app.state.files.clone();
+
+        app.do_apply(plans, files);
+
+        assert!(dir.join("test_file1.txt").exists());
+        // Undo log should not be created when no_undo is true
+        assert!(!undo_path.exists());
     }
 }
