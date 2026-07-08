@@ -24,8 +24,14 @@ pub fn truncate_stem(stem: &str, ext: &str) -> String {
         return stem.to_string();
     }
 
-    // Truncate stem and add ".." suffix
-    let truncated = &stem[..available];
+    // Truncate at character boundary to avoid panicking on multi-byte UTF-8
+    let truncated_byte_idx = stem
+        .char_indices()
+        .take_while(|(byte_idx, _)| *byte_idx + 1 <= available)
+        .last()
+        .map(|(byte_idx, ch)| byte_idx + ch.len_utf8())
+        .unwrap_or(0);
+    let truncated = &stem[..truncated_byte_idx];
     format!("{truncated}..")
 }
 
@@ -107,6 +113,31 @@ mod tests {
         let result = truncate_stem(&stem, &ext);
         assert!(result.len() < 300);
         assert!(result.ends_with(".."));
+    }
+
+    #[test]
+    fn truncate_stem_multibyte_utf8() {
+        // Multi-byte characters (CJK, emoji) must not be split mid-character
+        // Each Chinese character is 3 bytes in UTF-8
+        let stem = "中".repeat(100); // 300 bytes
+        let result = truncate_stem(&stem, "txt");
+        // Result should be valid UTF-8 and end with ".."
+        assert!(result.ends_with(".."));
+        // Verify no panics by converting to string (already is, but validates)
+        let _ = result.as_str();
+        // Verify all characters before ".." are complete
+        let prefix = &result[..result.len() - 2];
+        assert!(std::str::from_utf8(prefix.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn truncate_stem_emoji() {
+        // Emoji are 4 bytes each in UTF-8
+        let stem = "😀".repeat(80); // 320 bytes
+        let result = truncate_stem(&stem, "txt");
+        assert!(result.ends_with(".."));
+        let prefix = &result[..result.len() - 2];
+        assert!(std::str::from_utf8(prefix.as_bytes()).is_ok());
     }
 
     #[test]
