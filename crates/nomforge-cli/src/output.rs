@@ -3,6 +3,13 @@ use std::path::Path;
 use colored::Colorize;
 use nomforge_core::{Conflict, ConflictReason, RenamePlan};
 
+/// Calculate the maximum column width based on filenames, capped at 60.
+fn max_filename_width(names: &[&str]) -> usize {
+    let max_len = names.iter().map(|n| n.len()).max().unwrap_or(20);
+    // Cap at 60 to prevent overly wide output, minimum 20
+    max_len.clamp(20, 60)
+}
+
 /// Print the preview table for a dry-run.
 pub fn print_preview(plans: &[RenamePlan]) {
     if plans.is_empty() {
@@ -10,38 +17,58 @@ pub fn print_preview(plans: &[RenamePlan]) {
         return;
     }
 
+    // Collect filenames and calculate dynamic widths
+    let source_names: Vec<String> = plans
+        .iter()
+        .map(|p| {
+            p.source
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
+        .collect();
+
+    let target_names: Vec<String> = plans
+        .iter()
+        .map(|p| {
+            p.target
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
+        .collect();
+
+    let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
+    let target_refs: Vec<&str> = target_names.iter().map(|s| s.as_str()).collect();
+
+    let source_width = max_filename_width(&source_refs);
+    let target_width = max_filename_width(&target_refs);
+
     println!();
     println!(
-        "  {:<40} {} {:<40}",
+        "  {:<source_width$} {} {:<target_width$}",
         "FILE".bold(),
         "->".dimmed(),
         "NEW NAME".bold()
     );
-    println!("  {}", "-".repeat(85).dimmed());
+    println!("  {}", "-".repeat(source_width + 3 + target_width).dimmed());
 
-    for plan in plans {
-        let source_name = plan
-            .source
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-
-        let target_name = plan
-            .target
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-
+    for (source_name, target_name, plan) in source_names
+        .iter()
+        .zip(target_names.iter())
+        .zip(plans.iter())
+        .map(|((s, t), p)| (s, t, p))
+    {
         if plan.source == plan.target {
             println!(
-                "  {:<40} {} {:<40}",
+                "  {:<source_width$} {} {:<target_width$}",
                 source_name.dimmed(),
                 "->".dimmed(),
                 "(no change)".dimmed()
             );
         } else {
             println!(
-                "  {:<40} {} {:<40}",
+                "  {:<source_width$} {} {:<target_width$}",
                 source_name,
                 "->".green(),
                 target_name.green()
@@ -61,51 +88,79 @@ pub fn print_results(results: &[nomforge_core::RenameResult]) {
         return;
     }
 
+    // Collect filenames and calculate dynamic widths
+    let source_names: Vec<String> = results
+        .iter()
+        .map(|r| {
+            r.source
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
+        .collect();
+
+    let target_names: Vec<String> = results
+        .iter()
+        .map(|r| {
+            r.target
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
+        .collect();
+
+    let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
+    let target_refs: Vec<&str> = target_names.iter().map(|s| s.as_str()).collect();
+
+    let source_width = max_filename_width(&source_refs);
+    let target_width = max_filename_width(&target_refs);
+
     println!();
     println!(
-        "  {:<40} {:<40} {}",
+        "  {:<source_width$} {:<target_width$} {}",
         "FILE".bold(),
         "NEW NAME".bold(),
         "STATUS".bold()
     );
-    println!("  {}", "-".repeat(90).dimmed());
+    println!(
+        "  {}",
+        "-".repeat(source_width + 1 + target_width + 1 + 8).dimmed()
+    );
 
-    for result in results {
-        let source_name = result
-            .source
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-
-        let target_name = result
-            .target
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-
+    for (source_name, target_name, result) in source_names
+        .iter()
+        .zip(target_names.iter())
+        .zip(results.iter())
+        .map(|((s, t), r)| (s, t, r))
+    {
         if result.source == result.target {
             println!(
-                "  {:<40} {:<40} {}",
+                "  {:<source_width$} {:<target_width$} {}",
                 source_name.dimmed(),
                 "(no change)".dimmed(),
                 "ok (unchanged)".dimmed()
             );
         } else if result.success {
             println!(
-                "  {:<40} {:<40} {}",
+                "  {:<source_width$} {:<target_width$} {}",
                 source_name,
                 target_name,
                 "ok".green().bold()
             );
         } else {
             println!(
-                "  {:<40} {:<40} {}",
+                "  {:<source_width$} {:<target_width$} {}",
                 source_name,
                 target_name,
                 "FAILED".red().bold()
             );
             if let Some(err) = &result.error {
-                println!("  {:<40} {:<40}   {}", "", "", err.red());
+                println!(
+                    "  {:<source_width$} {:<target_width$}   {}",
+                    "",
+                    "",
+                    err.red()
+                );
             }
         }
     }
