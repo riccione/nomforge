@@ -4,6 +4,24 @@ use crate::state::State;
 
 /// Render the preview table panel showing plans and/or results.
 pub fn show(ui: &mut egui::Ui, state: &State) {
+    // Show conflicts if any
+    if !state.pending_conflicts.is_empty() {
+        ui.colored_label(
+            egui::Color32::from_rgb(255, 165, 0),
+            format!(
+                "{} conflict(s) detected — files may be overwritten",
+                state.pending_conflicts.len()
+            ),
+        );
+        for conflict in &state.pending_conflicts {
+            ui.label(
+                egui::RichText::new(format!("  • {}", conflict.reason))
+                    .color(egui::Color32::from_rgb(255, 165, 0)),
+            );
+        }
+        ui.separator();
+    }
+
     // Show plans (preview mode)
     if !state.plans.is_empty() {
         ui.heading("Preview");
