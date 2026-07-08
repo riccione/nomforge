@@ -10,6 +10,8 @@ A bulk file renaming tool with CLI and GUI interfaces, built in Rust.
 - **Undo support**: revert the last batch of renames via JSON log
 - **Conflict detection**: warns when multiple files would collide
 - **File filtering**: by extension, include/exclude regex patterns, recursive scan, hidden files
+- **Smart truncation**: automatically truncates filenames exceeding OS limits (255 bytes)
+- **Auto-disambiguation**: adds `_1`, `_2`, etc. when target files already exist
 
 ## Architecture
 
