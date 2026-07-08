@@ -1,16 +1,15 @@
-#![allow(dead_code)]
-
 use eframe::egui;
 
 /// A colored badge indicating conflict status.
+#[allow(dead_code)]
 pub enum BadgeKind {
     /// No conflict (green).
     Ok,
-    /// Warning (yellow/amber).
+    /// Warning (yellow/amber) - reserved for future use.
     Warning,
     /// Error/conflict (red).
     Error,
-    /// Informational (blue).
+    /// Informational (blue) - reserved for future use.
     Info,
 }
 
@@ -36,6 +35,7 @@ pub fn show(ui: &mut egui::Ui, text: &str, kind: BadgeKind) {
 }
 
 /// Show a conflict badge for a rename result.
+#[expect(dead_code, reason = "reserved for future result status display")]
 pub fn show_result_status(ui: &mut egui::Ui, success: bool) {
     if success {
         show(ui, "ok", BadgeKind::Ok);
