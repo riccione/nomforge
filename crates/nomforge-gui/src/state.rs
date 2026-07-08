@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use nomforge_core::{Conflict, RenamePlan, RenameResult, RenameRule};
 
 /// Application state for the nomforge GUI.
-#[allow(dead_code)]
 pub struct State {
     /// Target directory to scan.
     pub dir: String,
@@ -44,6 +43,7 @@ pub struct State {
     pub pending_conflicts: Vec<Conflict>,
 
     /// Output / results.
+    #[expect(dead_code, reason = "reserved for future verbose output feature")]
     pub verbose: bool,
 
     /// Files found by scanner.
@@ -148,6 +148,21 @@ impl State {
         if !self.ext_change.is_empty() {
             rules.push(RenameRule::ChangeExtension {
                 new_ext: Some(self.ext_change.clone()),
+            });
+        }
+
+        // Counter rule - enabled if counter_start or counter_padding is explicitly set
+        if self.counter_start != 1 || self.counter_padding > 0 {
+            let position = match self.counter_position.to_lowercase().as_str() {
+                "prefix" => nomforge_core::SeqPosition::Prefix,
+                "suffix" => nomforge_core::SeqPosition::Suffix,
+                "replace" => nomforge_core::SeqPosition::ReplaceStem,
+                _ => nomforge_core::SeqPosition::Prefix,
+            };
+            rules.push(RenameRule::NumberSequence {
+                start: self.counter_start,
+                padding: self.counter_padding,
+                position,
             });
         }
 
