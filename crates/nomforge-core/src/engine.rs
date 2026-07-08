@@ -45,28 +45,6 @@ impl RenameEngine {
         Self { rules, regex_cache }
     }
 
-    /// Get or compile a regex pattern, using the cache.
-    fn get_regex(&self, pattern: &str) -> Result<&Regex> {
-        let lock = self
-            .regex_cache
-            .get(pattern)
-            .ok_or_else(|| NomforgeError::InvalidRegex {
-                pattern: pattern.to_string(),
-                reason: "pattern not found in cache".to_string(),
-            })?;
-        if let Some(re) = lock.get() {
-            return Ok(re);
-        }
-        // Compile and store the regex
-        let re = Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
-            pattern: pattern.to_string(),
-            reason: e.to_string(),
-        })?;
-        // This might race if called concurrently, but the result is the same
-        let _ = lock.set(re);
-        Ok(lock.get().unwrap())
-    }
-
     /// Generate a dry-run preview of renames without mutating the filesystem.
     pub fn plan(&self, files: &[PathBuf]) -> Result<Vec<RenamePlan>> {
         if files.is_empty() {
@@ -129,12 +107,13 @@ impl RenameEngine {
             });
 
         let mut ctx = RenameContext {
-            filename,
+            filename: &filename,
             stem: stem.clone(),
             extension: extension.clone(),
-            parent_dir: parent_dir.clone(),
+            parent_dir: &parent_dir,
             counter,
             metadata,
+            regex_cache: Some(&self.regex_cache),
         };
 
         // Apply rules in order, each rule sees the result of the previous one
@@ -143,16 +122,7 @@ impl RenameEngine {
         for rule in &self.rules {
             ctx.stem = current_stem.clone();
             ctx.extension = current_ext.clone();
-            let new_stem = match rule {
-                RenameRule::RegexReplace {
-                    pattern,
-                    replacement,
-                } => {
-                    let re = self.get_regex(pattern)?;
-                    re.replace_all(&ctx.stem, replacement.as_str()).into_owned()
-                }
-                _ => rule.apply(&ctx)?,
-            };
+            let new_stem = rule.apply(&ctx)?;
             current_stem = new_stem;
             // Track extension changes from ChangeExtension rules
             if let RenameRule::ChangeExtension { new_ext } = rule {

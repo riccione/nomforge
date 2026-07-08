@@ -51,18 +51,21 @@ mod tests {
     use crate::rules::{FileMetadata, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(ext: &str) -> RenameContext {
+    fn make_ctx(ext: &str) -> RenameContext<'static> {
+        use std::sync::LazyLock;
+        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
         RenameContext {
-            filename: format!("file.{}", ext),
+            filename: "file.txt",
             stem: "file".to_string(),
             extension: ext.to_string(),
-            parent_dir: PathBuf::from("/tmp"),
+            parent_dir: &PARENT,
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
+            regex_cache: None,
         }
     }
 

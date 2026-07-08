@@ -12,18 +12,21 @@ mod tests {
     use crate::rules::{FileMetadata, RenameContext, RenameRule};
     use std::path::PathBuf;
 
-    fn make_ctx(stem: &str) -> RenameContext {
+    fn make_ctx(stem: &str) -> RenameContext<'static> {
+        use std::sync::LazyLock;
+        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
         RenameContext {
-            filename: format!("{}.txt", stem),
+            filename: "file.txt",
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: PathBuf::from("/tmp"),
+            parent_dir: &PARENT,
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
+            regex_cache: None,
         }
     }
 
@@ -71,21 +74,24 @@ mod tests {
 
     #[test]
     fn via_enum_variant() {
+        use std::sync::LazyLock;
+        static PARENT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/tmp"));
         let rule = RenameRule::FindReplace {
             find: "DSC".into(),
             replace: "photo".into(),
         };
         let ctx = RenameContext {
-            filename: "DSC_001.jpg".into(),
+            filename: "DSC_001.jpg",
             stem: "DSC_001".into(),
             extension: "jpg".into(),
-            parent_dir: PathBuf::from("/tmp"),
+            parent_dir: &PARENT,
             counter: 0,
             metadata: FileMetadata {
                 size: 0,
                 modified: None,
                 created: None,
             },
+            regex_cache: None,
         };
         assert_eq!(rule.apply(&ctx).unwrap(), "photo_001");
     }
