@@ -157,7 +157,7 @@ impl RenameRule {
                 position,
             } => counter::apply_counter(*start, *padding, *position, ctx),
             Self::ChangeExtension { new_ext } => {
-                extension::apply_extension(&ctx.extension, new_ext)?;
+                extension::apply_extension(&ctx.extension, new_ext.as_deref())?;
                 Ok(ctx.stem.clone())
             }
             Self::RegexReplace {

@@ -34,13 +34,13 @@ fn validate_extension(ext: &str) -> Result<()> {
 /// - `new_ext`: `None` to keep current, `Some("")` to remove, `Some("png")` to change
 ///
 /// Returns the new extension (without dot).
-pub fn apply_extension(current_ext: &str, new_ext: &Option<String>) -> Result<String> {
+pub fn apply_extension(current_ext: &str, new_ext: Option<&str>) -> Result<String> {
     match new_ext {
         None => Ok(current_ext.to_string()),
-        Some(ext) if ext.is_empty() => Ok(String::new()),
+        Some("") => Ok(String::new()),
         Some(ext) => {
             validate_extension(ext)?;
-            Ok(ext.clone())
+            Ok(ext.to_string())
         }
     }
 }
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn keep_current() {
         let ctx = make_ctx("jpg");
-        assert_eq!(apply_extension(&ctx.extension, &None).unwrap(), "jpg");
+        assert_eq!(apply_extension(&ctx.extension, None).unwrap(), "jpg");
     }
 
     // --- Change extension ---
@@ -79,19 +79,13 @@ mod tests {
     #[test]
     fn change_to_png() {
         let ctx = make_ctx("jpg");
-        assert_eq!(
-            apply_extension(&ctx.extension, &Some("png".into())).unwrap(),
-            "png"
-        );
+        assert_eq!(apply_extension(&ctx.extension, Some("png")).unwrap(), "png");
     }
 
     #[test]
     fn change_to_pdf() {
         let ctx = make_ctx("docx");
-        assert_eq!(
-            apply_extension(&ctx.extension, &Some("pdf".into())).unwrap(),
-            "pdf"
-        );
+        assert_eq!(apply_extension(&ctx.extension, Some("pdf")).unwrap(), "pdf");
     }
 
     // --- Remove extension ---
@@ -99,10 +93,7 @@ mod tests {
     #[test]
     fn remove_extension() {
         let ctx = make_ctx("txt");
-        assert_eq!(
-            apply_extension(&ctx.extension, &Some("".into())).unwrap(),
-            ""
-        );
+        assert_eq!(apply_extension(&ctx.extension, Some("")).unwrap(), "");
     }
 
     // --- Same extension ---
@@ -110,10 +101,7 @@ mod tests {
     #[test]
     fn same_extension() {
         let ctx = make_ctx("jpg");
-        assert_eq!(
-            apply_extension(&ctx.extension, &Some("jpg".into())).unwrap(),
-            "jpg"
-        );
+        assert_eq!(apply_extension(&ctx.extension, Some("jpg")).unwrap(), "jpg");
     }
 
     // --- Via enum variant (stem unchanged) ---
@@ -141,7 +129,7 @@ mod tests {
 
     #[test]
     fn reject_path_separator_forward_slash() {
-        let result = apply_extension("txt", &Some("../etc/passwd".into()));
+        let result = apply_extension("txt", Some("../etc/passwd"));
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("path separator"));
@@ -149,7 +137,7 @@ mod tests {
 
     #[test]
     fn reject_path_separator_backslash() {
-        let result = apply_extension("txt", &Some("..\\etc\\passwd".into()));
+        let result = apply_extension("txt", Some("..\\etc\\passwd"));
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("path separator"));
@@ -157,7 +145,7 @@ mod tests {
 
     #[test]
     fn reject_parent_directory_reference() {
-        let result = apply_extension("txt", &Some("..".into()));
+        let result = apply_extension("txt", Some(".."));
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("parent directory"));
@@ -165,7 +153,7 @@ mod tests {
 
     #[test]
     fn reject_null_byte() {
-        let result = apply_extension("txt", &Some("png\0jpg".into()));
+        let result = apply_extension("txt", Some("png\0jpg"));
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("null byte"));
@@ -173,9 +161,9 @@ mod tests {
 
     #[test]
     fn allow_valid_extensions() {
-        assert!(apply_extension("txt", &Some("png".into())).is_ok());
-        assert!(apply_extension("txt", &Some("jpg".into())).is_ok());
-        assert!(apply_extension("txt", &Some("md".into())).is_ok());
-        assert!(apply_extension("txt", &Some("".into())).is_ok());
+        assert!(apply_extension("txt", Some("png")).is_ok());
+        assert!(apply_extension("txt", Some("jpg")).is_ok());
+        assert!(apply_extension("txt", Some("md")).is_ok());
+        assert!(apply_extension("txt", Some("")).is_ok());
     }
 }
