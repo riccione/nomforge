@@ -109,13 +109,16 @@ pub fn log_renames(path: &Path, results: &[RenameResult]) -> Result<()> {
 
 /// Revert the last batch of renames.
 ///
-/// Returns the number of files successfully reverted.
+/// Returns `(reverted, skipped)`: the number of files successfully reverted
+/// and the number of entries skipped because their source path already
+/// exists (e.g. the user recreated the file after the forward rename).
+/// Existing sources are never overwritten — on Unix, `rename(2)` would
+/// silently replace them. Residual TOCTOU: the source could appear between
+/// the existence check and the rename. Entries whose target is missing are
+/// neither reverted nor counted as skipped.
 ///
-/// Attempts the rename directly without pre-checking file existence to avoid
-/// race conditions where the filesystem state changes between check and rename.
-/// If the rename fails (e.g., target doesn't exist, source already exists),
-/// that entry is skipped gracefully.
-pub fn revert_last(path: &Path) -> Result<usize> {
+/// The batch is removed from the log even when entries are skipped.
+pub fn revert_last(path: &Path) -> Result<(usize, usize)> {
     let mut log = load_undo_log(path)?;
 
     let batch = log
@@ -124,16 +127,24 @@ pub fn revert_last(path: &Path) -> Result<usize> {
         .ok_or_else(|| NomforgeError::UndoLog("No undo history found".into()))?;
 
     let mut reverted = 0;
+    let mut skipped = 0;
     for entry in batch.operations.iter().rev() {
-        // Attempt rename directly — if it fails, skip this entry.
-        // This avoids TOCTOU race conditions between existence checks and rename.
+        // Refuse to overwrite a file recreated at the original path
+        // (rename(2) would silently replace it on Unix). Residual TOCTOU:
+        // the source could appear between this check and the rename.
+        // symlink_metadata also catches broken symlinks, which rename
+        // would replace too.
+        if fs::symlink_metadata(&entry.source).is_ok() {
+            skipped += 1;
+            continue;
+        }
         if fs::rename(&entry.target, &entry.source).is_ok() {
             reverted += 1;
         }
     }
 
     save_undo_log(path, &log)?;
-    Ok(reverted)
+    Ok((reverted, skipped))
 }
 
 /// List recent undo batches.
@@ -308,11 +319,139 @@ mod tests {
         assert!(!tmp.join("original.txt").exists());
 
         log_renames(&path, &results).unwrap();
-        let reverted = revert_last(&path).unwrap();
+        let (reverted, skipped) = revert_last(&path).unwrap();
 
         assert_eq!(reverted, 1);
+        assert_eq!(skipped, 0);
         assert!(tmp.join("original.txt").exists());
         assert!(!tmp.join("renamed.txt").exists());
+
+        cleanup(&path);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn revert_skips_recreated_source() {
+        let tmp = PathBuf::from("/tmp/nomforge_undo_revert_recreated");
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("original.txt"), "original").unwrap();
+
+        let path = test_undo_path("revert_recreated");
+        cleanup(&path);
+
+        // Forward rename, then the user recreates the original path with
+        // new content.
+        fs::rename(tmp.join("original.txt"), tmp.join("renamed.txt")).unwrap();
+        fs::write(tmp.join("original.txt"), "user recreated").unwrap();
+
+        let results = vec![RenameResult {
+            source: tmp.join("original.txt"),
+            target: tmp.join("renamed.txt"),
+            success: true,
+            error: None,
+        }];
+        log_renames(&path, &results).unwrap();
+
+        let (reverted, skipped) = revert_last(&path).unwrap();
+        assert_eq!(reverted, 0);
+        assert_eq!(skipped, 1);
+        // The recreated file must survive with its own content
+        assert_eq!(
+            fs::read_to_string(tmp.join("original.txt")).unwrap(),
+            "user recreated"
+        );
+        assert_eq!(
+            fs::read_to_string(tmp.join("renamed.txt")).unwrap(),
+            "original"
+        );
+        // Batch was consumed even though everything was skipped
+        assert_eq!(undo_count(&path).unwrap(), 0);
+
+        cleanup(&path);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn revert_partial_batch_skips_existing_source() {
+        let tmp = PathBuf::from("/tmp/nomforge_undo_revert_partial");
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("clean.txt"), "clean").unwrap();
+        fs::write(tmp.join("other.txt"), "other").unwrap();
+
+        let path = test_undo_path("revert_partial");
+        cleanup(&path);
+
+        // clean.txt -> clean_renamed.txt (revertible)
+        // other.txt -> other_renamed.txt, then other.txt recreated (skip)
+        fs::rename(tmp.join("clean.txt"), tmp.join("clean_renamed.txt")).unwrap();
+        fs::rename(tmp.join("other.txt"), tmp.join("other_renamed.txt")).unwrap();
+        fs::write(tmp.join("other.txt"), "user recreated").unwrap();
+
+        let results = vec![
+            RenameResult {
+                source: tmp.join("clean.txt"),
+                target: tmp.join("clean_renamed.txt"),
+                success: true,
+                error: None,
+            },
+            RenameResult {
+                source: tmp.join("other.txt"),
+                target: tmp.join("other_renamed.txt"),
+                success: true,
+                error: None,
+            },
+        ];
+        log_renames(&path, &results).unwrap();
+
+        let (reverted, skipped) = revert_last(&path).unwrap();
+        assert_eq!(reverted, 1);
+        assert_eq!(skipped, 1);
+        assert_eq!(fs::read_to_string(tmp.join("clean.txt")).unwrap(), "clean");
+        assert!(!tmp.join("clean_renamed.txt").exists());
+        assert_eq!(
+            fs::read_to_string(tmp.join("other.txt")).unwrap(),
+            "user recreated"
+        );
+        assert_eq!(
+            fs::read_to_string(tmp.join("other_renamed.txt")).unwrap(),
+            "other"
+        );
+
+        cleanup(&path);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn revert_skips_broken_symlink_source() {
+        let tmp = PathBuf::from("/tmp/nomforge_undo_revert_symlink");
+        fs::create_dir_all(&tmp).unwrap();
+
+        let path = test_undo_path("revert_symlink");
+        cleanup(&path);
+
+        fs::write(tmp.join("renamed.txt"), "content").unwrap();
+        // Dangling symlink at the original path: exists() is false for it,
+        // but it is still user data that must not be replaced.
+        std::os::unix::fs::symlink(tmp.join("missing_target"), tmp.join("original.txt")).unwrap();
+
+        let results = vec![RenameResult {
+            source: tmp.join("original.txt"),
+            target: tmp.join("renamed.txt"),
+            success: true,
+            error: None,
+        }];
+        log_renames(&path, &results).unwrap();
+
+        let (reverted, skipped) = revert_last(&path).unwrap();
+        assert_eq!(reverted, 0);
+        assert_eq!(skipped, 1);
+        let meta = fs::symlink_metadata(tmp.join("original.txt")).unwrap();
+        assert!(meta.file_type().is_symlink());
+        assert_eq!(
+            fs::read_to_string(tmp.join("renamed.txt")).unwrap(),
+            "content"
+        );
 
         cleanup(&path);
         let _ = fs::remove_dir_all(&tmp);

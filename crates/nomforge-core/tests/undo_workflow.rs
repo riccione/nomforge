@@ -33,7 +33,7 @@ fn undo_single_batch() {
     assert_eq!(names, vec!["renamed_file1.txt", "renamed_file2.txt"]);
 
     // Undo
-    let reverted = revert_last(&undo_path).unwrap();
+    let (reverted, _) = revert_last(&undo_path).unwrap();
     assert_eq!(reverted, 2);
 
     // Verify files are restored
@@ -76,7 +76,7 @@ fn undo_multi_batch() {
     assert_eq!(names, vec!["batch2_batch1_a.txt", "batch2_batch1_b.txt"]);
 
     // Undo last batch (batch2)
-    let reverted = revert_last(&undo_path).unwrap();
+    let (reverted, _) = revert_last(&undo_path).unwrap();
     assert_eq!(reverted, 2);
     assert_eq!(undo_count(&undo_path).unwrap(), 1);
 
@@ -84,7 +84,7 @@ fn undo_multi_batch() {
     assert_eq!(names, vec!["batch1_a.txt", "batch1_b.txt"]);
 
     // Undo first batch (batch1)
-    let reverted = revert_last(&undo_path).unwrap();
+    let (reverted, _) = revert_last(&undo_path).unwrap();
     assert_eq!(reverted, 2);
     assert_eq!(undo_count(&undo_path).unwrap(), 0);
 
@@ -111,7 +111,7 @@ fn undo_when_target_deleted() {
     fs::remove_file(tmp.path().join("renamed_file1.txt")).unwrap();
 
     // Undo should handle the missing file gracefully
-    let reverted = revert_last(&undo_path).unwrap();
+    let (reverted, _) = revert_last(&undo_path).unwrap();
     // file2 should be restored, file1 cannot be restored (renamed file was deleted)
     assert!(reverted <= 2);
 
