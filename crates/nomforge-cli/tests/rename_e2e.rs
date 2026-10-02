@@ -361,3 +361,70 @@ fn cli_rename_no_undo() {
     assert_eq!(names, vec!["pre_file.txt"]);
     assert!(!undo_path.exists());
 }
+
+// Conflicting plans block --apply unless --force is given
+#[test]
+fn cli_conflicts_block_apply_without_force() {
+    let tmp = common::create_test_dir(&[("img_1.jpg", "c1"), ("img_2.jpg", "c2")]);
+    let undo_path = external_undo_path(&tmp);
+
+    // Both files collapse onto img.jpg: SameTarget conflict
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--regex",
+        "_[0-9]",
+        "--replacement",
+        "",
+        "--apply",
+        "--history-file",
+        undo_path.to_str().unwrap(),
+    ]);
+
+    assert_ne!(
+        exit_code, 0,
+        "apply must be blocked without --force. stderr: {stderr}"
+    );
+    assert!(stderr.contains("conflict"), "stderr: {stderr}");
+    assert_eq!(
+        common::file_names(tmp.path()),
+        vec!["img_1.jpg", "img_2.jpg"]
+    );
+    assert!(!undo_path.exists());
+    let _ = std::fs::remove_file(&undo_path);
+}
+
+// --force proceeds with conflicts: first target wins, nothing overwritten
+#[test]
+fn cli_force_proceeds_with_conflicts() {
+    let tmp = common::create_test_dir(&[("img_1.jpg", "c1"), ("img_2.jpg", "c2")]);
+    let undo_path = external_undo_path(&tmp);
+
+    let (exit_code, stdout, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--regex",
+        "_[0-9]",
+        "--replacement",
+        "",
+        "--apply",
+        "--force",
+        "--history-file",
+        undo_path.to_str().unwrap(),
+    ]);
+
+    assert_eq!(exit_code, 0, "force must proceed. stderr: {stderr}");
+    // img_1.jpg sorts first and wins the shared target
+    assert_eq!(common::file_names(tmp.path()), vec!["img.jpg", "img_2.jpg"]);
+    assert_eq!(common::read_content(&tmp.path().join("img.jpg")), "c1");
+    assert_eq!(common::read_content(&tmp.path().join("img_2.jpg")), "c2");
+    assert!(stdout.contains("1 failed"), "stdout: {stdout}");
+
+    // Undo log records only the successful rename
+    let log = std::fs::read_to_string(&undo_path).unwrap();
+    assert!(log.contains("img_1.jpg"));
+    assert!(!log.contains("img_2.jpg"));
+    let _ = std::fs::remove_file(&undo_path);
+}

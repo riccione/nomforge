@@ -330,7 +330,9 @@ impl NomforgeApp {
                 });
 
             ui.add_space(16.0);
-            ui.label("Apply anyway? Files with conflicts may be overwritten.");
+            ui.label(
+                "Apply anyway? Conflicting renames will fail — the first plan wins, nothing is overwritten.",
+            );
             ui.add_space(8.0);
 
             ui.horizontal(|ui| {

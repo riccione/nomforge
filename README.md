@@ -8,7 +8,7 @@ A bulk file renaming tool with CLI and GUI interfaces, built in Rust.
 - **Rule chaining**: combine multiple rules in a single pass
 - **Dry-run by default**: preview all changes before applying
 - **Undo support**: revert the last batch of renames via JSON log
-- **Conflict detection**: warns when multiple files would collide
+- **Conflict detection**: aborts `--apply` when multiple files would collide (`--force` to proceed; conflicts fail instead of overwriting)
 - **File filtering**: by extension, include/exclude regex patterns, recursive scan, hidden files
 - **Smart truncation**: automatically truncates filenames exceeding OS limits (255 bytes)
 - **Auto-disambiguation**: adds `_1`, `_2`, etc. when a changed target already exists (no-op plans are never renamed)
@@ -107,6 +107,7 @@ nomforge-cli undo --history-file /path/to/undo.json
 | `--recursive` | `-R` | Scan subdirectories recursively |
 | `--hidden` | | Include hidden files |
 | `--apply` | `-a` | Actually apply renames (default is dry-run) |
+| `--force` | | Apply even when conflicts are detected; conflicting renames fail instead of overwriting |
 | `--no-undo` | | Skip logging to undo history |
 | `--history-file` | | Custom undo log file path |
 | `--verbose` | `-v` | Show detailed output |

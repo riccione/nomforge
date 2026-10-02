@@ -91,6 +91,11 @@ pub struct RenameArgs {
     #[arg(short, long)]
     pub apply: bool,
 
+    /// Apply even when conflicts are detected; conflicting renames fail
+    /// instead of overwriting
+    #[arg(long)]
+    pub force: bool,
+
     /// Skip logging to undo history
     #[arg(long)]
     pub no_undo: bool,
@@ -143,6 +148,7 @@ mod tests {
             recursive: false,
             hidden: false,
             apply: false,
+            force: false,
             no_undo: false,
             history_file: None,
             verbose: false,
@@ -150,5 +156,6 @@ mod tests {
         assert!(args.counter_start.is_none());
         assert!(args.counter_padding.is_none());
         assert!(!args.apply);
+        assert!(!args.force);
     }
 }
