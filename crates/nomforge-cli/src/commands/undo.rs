@@ -15,11 +15,19 @@ pub fn run(args: &args::UndoArgs) -> anyhow::Result<()> {
     }
 
     println!("  Undoing last batch ({} total batches)...", count);
-    let reverted = nomforge_core::revert_last(&history_path)?;
+    let (reverted, skipped) = nomforge_core::revert_last(&history_path)?;
     println!(
         "  {}",
-        format!("Reverted {} file(s).", reverted).green().bold()
+        format!("Reverted {reverted} file(s).").green().bold()
     );
+    if skipped > 0 {
+        println!(
+            "  {}",
+            format!("Skipped {skipped} existing file(s) — not overwritten.")
+                .yellow()
+                .bold()
+        );
+    }
 
     Ok(())
 }

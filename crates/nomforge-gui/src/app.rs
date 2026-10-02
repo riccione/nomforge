@@ -268,10 +268,16 @@ impl NomforgeApp {
         }
 
         match nomforge_core::revert_last(&history_path) {
-            Ok(0) => self.state.status = "No undo history found".into(),
-            Ok(n) => {
-                self.state.status = format!("Reverted {n} file(s)");
-                self.preview();
+            Ok((reverted, skipped)) => {
+                self.state.status = match (reverted, skipped) {
+                    (0, 0) => "No files to revert".into(),
+                    (0, m) => format!("Undo skipped {m} existing file(s)"),
+                    (n, 0) => format!("Reverted {n} file(s)"),
+                    (n, m) => format!("Reverted {n} file(s), skipped {m} existing"),
+                };
+                if reverted > 0 {
+                    self.preview();
+                }
             }
             Err(e) => self.state.status = format!("Undo error: {e}"),
         }

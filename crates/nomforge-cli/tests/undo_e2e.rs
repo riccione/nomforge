@@ -176,3 +176,41 @@ fn cli_undo_multi_batch() {
 
     let _ = std::fs::remove_file(&undo_path);
 }
+
+// Test 7: undo must not clobber a file recreated at the original path
+#[test]
+fn cli_undo_preserves_recreated_source() {
+    let tmp = common::create_test_dir(&[("file.txt", "original")]);
+    let undo_path = external_undo_path(&tmp);
+
+    // Forward rename: file.txt -> pre_file.txt
+    let (exit_code, _, _) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--prefix",
+        "pre_",
+        "--apply",
+        "--history-file",
+        undo_path.to_str().unwrap(),
+    ]);
+    assert_eq!(exit_code, 0);
+
+    // User recreates the original path with new content
+    std::fs::write(tmp.path().join("file.txt"), "user recreated").unwrap();
+
+    // Undo must skip instead of destroying the recreated file
+    let (exit_code, stdout, stderr) =
+        common::run_nomforge(&["undo", "--history-file", undo_path.to_str().unwrap()]);
+    assert_eq!(exit_code, 0, "stderr: {stderr}");
+    assert!(stdout.contains("Skipped"), "stdout: {stdout}");
+    assert!(stdout.contains("Reverted 0"), "stdout: {stdout}");
+    assert_eq!(
+        common::read_content(&tmp.path().join("file.txt")),
+        "user recreated"
+    );
+    // The renamed file is left in place
+    assert!(common::file_names(tmp.path()).contains(&"pre_file.txt".to_string()));
+
+    let _ = std::fs::remove_file(&undo_path);
+}
