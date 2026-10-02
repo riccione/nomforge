@@ -52,6 +52,11 @@ impl RenameEngine {
     }
 
     /// Apply the given rename plans to the filesystem.
+    ///
+    /// Continues past per-plan failures; inspect `RenameResult::success`. A
+    /// plan whose target already exists on disk (including one created
+    /// earlier in the same batch) fails instead of overwriting. Only setup
+    /// errors are returned as `Err`.
     pub fn apply(&self, plans: &[RenamePlan]) -> Result<Vec<RenameResult>> {
         let mut results = Vec::with_capacity(plans.len());
 
@@ -166,6 +171,22 @@ impl RenameEngine {
                 target: plan.target.clone(),
                 success: true,
                 error: None,
+            };
+        }
+
+        // Refuse to overwrite an existing target (e.g. the duplicate of a
+        // plan that just ran in this batch). Residual TOCTOU: the target
+        // could appear between this check and rename(2). Sequential apply
+        // also does not resolve ordering dependencies between plans
+        // (A->B fails while B still exists) — chained renames need ordered
+        // application, tracked as a follow-up alongside disambiguation
+        // removal.
+        if plan.target.exists() {
+            return RenameResult {
+                source: plan.source.clone(),
+                target: plan.target.clone(),
+                success: false,
+                error: Some(NomforgeError::TargetAlreadyExists(plan.target.clone()).to_string()),
             };
         }
 
@@ -486,6 +507,71 @@ mod tests {
         assert!(results[0].success);
         assert!(tmp.join("README").exists());
         assert!(!tmp.join("README_1").exists());
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn apply_fails_when_target_exists() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_apply_target_exists");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("source.txt"), "source content").unwrap();
+        fs::write(tmp.join("existing.txt"), "existing content").unwrap();
+
+        let engine = RenameEngine::new(vec![]);
+        let plans = vec![RenamePlan {
+            source: tmp.join("source.txt"),
+            target: tmp.join("existing.txt"),
+        }];
+        let results = engine.apply(&plans).unwrap();
+
+        assert!(!results[0].success);
+        assert!(
+            results[0]
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("already exists"))
+        );
+        // Neither file is touched
+        assert_eq!(
+            fs::read_to_string(tmp.join("source.txt")).unwrap(),
+            "source content"
+        );
+        assert_eq!(
+            fs::read_to_string(tmp.join("existing.txt")).unwrap(),
+            "existing content"
+        );
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn apply_duplicate_targets_first_wins() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_apply_duplicate_targets");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("a.txt"), "A").unwrap();
+        fs::write(tmp.join("b.txt"), "B").unwrap();
+
+        // Both plans claim the same new target: the second rename must fail
+        // instead of destroying the first file's content.
+        let engine = RenameEngine::new(vec![]);
+        let plans = vec![
+            RenamePlan {
+                source: tmp.join("a.txt"),
+                target: tmp.join("out.txt"),
+            },
+            RenamePlan {
+                source: tmp.join("b.txt"),
+                target: tmp.join("out.txt"),
+            },
+        ];
+        let results = engine.apply(&plans).unwrap();
+
+        assert!(results[0].success);
+        assert!(!results[1].success);
+        assert_eq!(fs::read_to_string(tmp.join("out.txt")).unwrap(), "A");
+        assert_eq!(fs::read_to_string(tmp.join("b.txt")).unwrap(), "B");
+        assert!(!tmp.join("a.txt").exists());
 
         cleanup_test_dir(&tmp);
     }
