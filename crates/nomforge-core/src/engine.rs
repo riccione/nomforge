@@ -33,6 +33,9 @@ impl RenameEngine {
     }
 
     /// Generate a dry-run preview of renames without mutating the filesystem.
+    ///
+    /// Plans whose rules change nothing keep `source == target` and are never
+    /// rewritten by disambiguation, even when the file exists on disk.
     pub fn plan(&self, files: &[PathBuf]) -> Result<Vec<RenamePlan>> {
         if files.is_empty() {
             return Err(NomforgeError::NoFilesFound);
@@ -142,8 +145,13 @@ impl RenameEngine {
             target
         };
 
-        // Disambiguate if target already exists
-        let target = disambiguate(&target);
+        // Don't disambiguate a no-op plan: its target IS our own source,
+        // which exists on disk by definition.
+        let target = if target.as_path() == path {
+            target
+        } else {
+            disambiguate(&target)
+        };
 
         Ok(RenamePlan {
             source: path.to_path_buf(),
@@ -428,6 +436,56 @@ mod tests {
 
         // Last extension rule wins
         assert_eq!(plans[0].target, tmp.join("file1.rs"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_noop_rule_with_existing_file() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_noop_existing");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("file1.txt"), "content").unwrap();
+
+        // Find doesn't match: the plan must stay a no-op even though the
+        // source exists on disk (regression: disambiguate used to rewrite
+        // it to file1_1.txt).
+        let engine = RenameEngine::new(vec![RenameRule::FindReplace {
+            find: "zzz".into(),
+            replace: "yyy".into(),
+        }]);
+        let files = vec![tmp.join("file1.txt")];
+        let plans = engine.plan(&files).unwrap();
+        assert_eq!(plans[0].source, plans[0].target);
+
+        let results = engine.apply(&plans).unwrap();
+        assert!(results[0].success);
+        assert!(tmp.join("file1.txt").exists());
+        assert!(!tmp.join("file1_1.txt").exists());
+        assert_eq!(
+            fs::read_to_string(tmp.join("file1.txt")).unwrap(),
+            "content"
+        );
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_no_rules_with_existing_file() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_no_rules_existing");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("README"), "docs").unwrap();
+
+        // No rules at all: the file must keep its name even though it
+        // exists on disk.
+        let engine = RenameEngine::new(vec![]);
+        let files = vec![tmp.join("README")];
+        let plans = engine.plan(&files).unwrap();
+        assert_eq!(plans[0].source, plans[0].target);
+
+        let results = engine.apply(&plans).unwrap();
+        assert!(results[0].success);
+        assert!(tmp.join("README").exists());
+        assert!(!tmp.join("README_1").exists());
 
         cleanup_test_dir(&tmp);
     }
