@@ -11,7 +11,7 @@ permissions:
 
 env:
   CLI_BIN: nomforge-cli
-  GUI_BIN: nomforge
+  GUI_BIN: nomforge-gui
 
 jobs:
   build-release:
