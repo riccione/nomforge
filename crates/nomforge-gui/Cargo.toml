@@ -8,10 +8,6 @@ homepage.workspace = true
 documentation.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "nomforge"
-path = "src/main.rs"
-
 [dependencies]
 nomforge-core = { path = "../nomforge-core" }
 eframe = "0.36"
