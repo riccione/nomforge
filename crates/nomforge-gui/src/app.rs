@@ -288,8 +288,11 @@ impl NomforgeApp {
             }
         };
 
-        let succeeded = results.iter().filter(|r| r.success).count();
-        self.state.status = format!("Renamed {succeeded} file(s)");
+        let renamed = results
+            .iter()
+            .filter(|r| r.success && r.source != r.target)
+            .count();
+        self.state.status = format!("Renamed {renamed} file(s)");
         self.state.plans = plans;
         self.state.files = files;
         self.state.results = results.clone();
@@ -302,7 +305,7 @@ impl NomforgeApp {
                 std::path::PathBuf::from(&self.state.history_file)
             };
             if let Err(e) = nomforge_core::log_renames(&history_path, &results) {
-                self.state.status = format!("Renamed {succeeded} file(s) (undo log error: {e})");
+                self.state.status = format!("Renamed {renamed} file(s) (undo log error: {e})");
             }
         }
     }
