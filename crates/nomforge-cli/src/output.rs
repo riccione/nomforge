@@ -176,7 +176,12 @@ pub fn print_results(results: &[nomforge_core::RenameResult]) {
     if failed > 0 {
         println!(
             "  {}",
-            format!("Renamed {} file(s), {} failed.", succeeded, failed).red()
+            format!(
+                "Renamed {} file(s), {} failed.",
+                succeeded - skipped,
+                failed
+            )
+            .red()
         );
     } else if skipped > 0 {
         println!(
