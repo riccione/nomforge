@@ -103,16 +103,21 @@ fn full_rename_empty_dir() {
 // Test 6: rename with no rules keeps original names
 #[test]
 fn full_rename_no_rules() {
-    let (tmp, _) = common::create_test_dir(&[]);
-    // Use non-existing files to avoid disambiguation
-    let files = vec![tmp.path().join("file1.txt"), tmp.path().join("file2.txt")];
+    let (tmp, _) = common::create_test_dir(&[("file1.txt", "a"), ("file2.txt", "b")]);
+    let files = scan_files(tmp.path(), &Default::default()).unwrap();
 
     let engine = RenameEngine::new(vec![]);
     let plans = engine.plan(&files).unwrap();
-    let results = engine.apply(&plans).unwrap();
 
+    // No-op plans stay no-ops even though the files exist on disk
+    assert!(plans.iter().all(|p| p.source == p.target));
+
+    let results = engine.apply(&plans).unwrap();
     assert!(results.iter().all(|r| r.success));
-    assert!(results.iter().all(|r| r.source == r.target));
+    assert_eq!(
+        common::file_names(tmp.path()),
+        vec!["file1.txt", "file2.txt"]
+    );
 }
 
 // Test 7: scan with extension filter then rename

@@ -185,16 +185,19 @@ fn extension_change_with_find_replace() {
 // Test 10: extension same value is no-op
 #[test]
 fn extension_same_value_noop() {
-    let (tmp, _) = common::create_test_dir(&[]);
-    // Use a non-existing file to avoid disambiguation
+    let (tmp, _) = common::create_test_dir(&[("file.txt", "c")]);
     let engine = RenameEngine::new(vec![RenameRule::ChangeExtension {
         new_ext: Some("txt".into()),
     }]);
-    let files = vec![tmp.path().join("file.txt")];
+    let files = nomforge_core::scan_files(tmp.path(), &Default::default()).unwrap();
     let plans = engine.plan(&files).unwrap();
-    let results = engine.apply(&plans).unwrap();
 
+    // Source should equal target (no change) even though the file exists
+    assert_eq!(plans[0].source, plans[0].target);
+
+    let results = engine.apply(&plans).unwrap();
     assert!(results[0].success);
-    // Source should equal target (no change)
     assert_eq!(results[0].source, results[0].target);
+    assert!(tmp.path().join("file.txt").exists());
+    assert!(!tmp.path().join("file_1.txt").exists());
 }

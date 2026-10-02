@@ -44,17 +44,24 @@ fn regex_capture_groups() {
 // Test 3: regex no match leaves file unchanged
 #[test]
 fn regex_no_match_unchanged() {
-    let (tmp, _) = common::create_test_dir(&[]);
-    // Use non-existing files to avoid disambiguation
+    let (tmp, _) = common::create_test_dir(&[("readme.md", "c1"), ("license.txt", "c2")]);
     let engine = RenameEngine::new(vec![RenameRule::RegexReplace {
         pattern: r"^\d+_".into(),
         replacement: "".into(),
     }]);
-    let files = vec![tmp.path().join("readme.md"), tmp.path().join("license.txt")];
+    let files = nomforge_core::scan_files(tmp.path(), &Default::default()).unwrap();
     let plans = engine.plan(&files).unwrap();
 
-    // No files match, so plans are no-ops (source == target)
+    // No files match, so plans are no-ops (source == target) even though
+    // the files exist on disk
     assert!(plans.iter().all(|p| p.source == p.target));
+
+    let results = engine.apply(&plans).unwrap();
+    assert!(results.iter().all(|r| r.success));
+    assert_eq!(
+        common::file_names(tmp.path()),
+        vec!["license.txt", "readme.md"]
+    );
 }
 
 // Test 4: regex replaces all occurrences in filename
