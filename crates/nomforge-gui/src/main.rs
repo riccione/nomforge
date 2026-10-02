@@ -17,6 +17,15 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         concat!("nomforge v", env!("CARGO_PKG_VERSION")),
         options,
-        Box::new(|_cc| Ok(Box::new(NomforgeApp::default()))),
+        Box::new(|cc| {
+            // egui defaults render too small; bump every text style by 2pt
+            // (both dark and light themes) while keeping font families.
+            cc.egui_ctx.all_styles_mut(|style| {
+                for font_id in style.text_styles.values_mut() {
+                    font_id.size += 2.0;
+                }
+            });
+            Ok(Box::new(NomforgeApp::default()))
+        }),
     )
 }
