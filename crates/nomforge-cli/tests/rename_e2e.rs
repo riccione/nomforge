@@ -428,3 +428,27 @@ fn cli_force_proceeds_with_conflicts() {
     assert!(!log.contains("img_2.jpg"));
     let _ = std::fs::remove_file(&undo_path);
 }
+
+// Rule output containing path traversal is rejected during planning
+#[test]
+fn cli_rejects_traversal_replacement() {
+    let tmp = common::create_test_dir(&[("doc.txt", "d")]);
+
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--find",
+        "doc",
+        "--replace",
+        "../evil",
+        "--apply",
+    ]);
+
+    assert_ne!(
+        exit_code, 0,
+        "traversal stem must be rejected. stderr: {stderr}"
+    );
+    assert!(stderr.contains("invalid name"), "stderr: {stderr}");
+    assert_eq!(common::file_names(tmp.path()), vec!["doc.txt"]);
+}

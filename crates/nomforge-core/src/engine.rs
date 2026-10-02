@@ -127,6 +127,17 @@ impl RenameEngine {
                 };
             }
         }
+        // Rule output becomes a path component: reject empty/dot stems and
+        // path separators (mirrors validate_extension's threat model).
+        if current_stem.is_empty()
+            || current_stem == "."
+            || current_stem == ".."
+            || current_stem.contains(['/', '\\', '\0'])
+        {
+            return Err(NomforgeError::Conflict(format!(
+                "rules produced invalid name: {current_stem:?}"
+            )));
+        }
         let target = if current_ext.is_empty() {
             parent_dir.join(&current_stem)
         } else {
@@ -572,6 +583,110 @@ mod tests {
         assert_eq!(fs::read_to_string(tmp.join("out.txt")).unwrap(), "A");
         assert_eq!(fs::read_to_string(tmp.join("b.txt")).unwrap(), "B");
         assert!(!tmp.join("a.txt").exists());
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_rejects_traversal_stem() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_traversal_stem");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("doc.txt"), "d").unwrap();
+
+        // join() does not normalize "..", so a rule-produced stem with a
+        // separator could move files outside the scanned directory.
+        let engine = RenameEngine::new(vec![RenameRule::FindReplace {
+            find: "doc".into(),
+            replace: "../evil".into(),
+        }]);
+        let err = engine.plan(&[tmp.join("doc.txt")]).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("invalid name"), "msg: {msg}");
+        assert!(msg.contains("../evil"), "msg: {msg}");
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_rejects_backslash_stem() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_backslash_stem");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("doc.txt"), "d").unwrap();
+
+        let engine = RenameEngine::new(vec![RenameRule::FindReplace {
+            find: "doc".into(),
+            replace: "..\\evil".into(),
+        }]);
+        let err = engine.plan(&[tmp.join("doc.txt")]).unwrap_err();
+        assert!(err.to_string().contains("invalid name"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_rejects_empty_stem_no_extension() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_empty_stem_no_ext");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("LICENSE"), "lic").unwrap();
+
+        // parent_dir.join("") is the directory itself; disambiguate would
+        // rename the file to a garbage sibling like <parentdir>_1.
+        let engine = RenameEngine::new(vec![RenameRule::RemoveText("LICENSE".into())]);
+        let err = engine.plan(&[tmp.join("LICENSE")]).unwrap_err();
+        assert!(err.to_string().contains("invalid name"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_rejects_empty_stem_with_extension() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_empty_stem_ext");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("README.md"), "docs").unwrap();
+
+        // Empty stem with an extension would silently produce a dotfile
+        // ("README.md" -> ".md").
+        let engine = RenameEngine::new(vec![RenameRule::RemoveText("README".into())]);
+        let err = engine.plan(&[tmp.join("README.md")]).unwrap_err();
+        assert!(err.to_string().contains("invalid name"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_rejects_dot_stems() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_dot_stems");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("doc.txt"), "d").unwrap();
+
+        // "." and ".." as the whole stem would resolve to the parent
+        // directory itself or its parent.
+        for replacement in [".", ".."] {
+            let engine = RenameEngine::new(vec![RenameRule::FindReplace {
+                find: "doc".into(),
+                replace: replacement.into(),
+            }]);
+            let err = engine.plan(&[tmp.join("doc.txt")]).unwrap_err();
+            assert!(err.to_string().contains("invalid name"));
+        }
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn plan_allows_embedded_dotdots() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_embedded_dotdots");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("abc.txt"), "x").unwrap();
+
+        // "a..c" contains ".." but no separator: a single path component
+        // and safe. Only exact "." / ".." and separators are rejected.
+        let engine = RenameEngine::new(vec![RenameRule::FindReplace {
+            find: "b".into(),
+            replace: "..".into(),
+        }]);
+        let plans = engine.plan(&[tmp.join("abc.txt")]).unwrap();
+        assert_eq!(plans[0].target, tmp.join("a..c.txt"));
 
         cleanup_test_dir(&tmp);
     }
