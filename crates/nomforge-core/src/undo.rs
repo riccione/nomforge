@@ -86,7 +86,7 @@ pub fn save_undo_log(path: &Path, log: &UndoLog) -> Result<()> {
 pub fn log_renames(path: &Path, results: &[RenameResult]) -> Result<()> {
     let successful: Vec<UndoEntry> = results
         .iter()
-        .filter(|r| r.success)
+        .filter(|r| r.success && r.source != r.target)
         .map(|r| UndoEntry {
             source: r.source.clone(),
             target: r.target.clone(),
