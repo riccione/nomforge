@@ -118,6 +118,7 @@ mod tests {
             recursive: false,
             hidden: false,
             apply: false,
+            force: false,
             no_undo: false,
             history_file: None,
             verbose: false,

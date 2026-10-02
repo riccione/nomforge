@@ -34,6 +34,12 @@ fn main() -> anyhow::Result<()> {
 
             // Preview or apply
             if args.apply {
+                if !conflicts.is_empty() && !args.force {
+                    anyhow::bail!(
+                        "{} conflict(s) detected; re-run with --force to proceed (conflicting renames fail, not overwrite)",
+                        conflicts.len()
+                    );
+                }
                 let results = engine.apply(&plans)?;
                 output::print_results(&results);
 
@@ -55,6 +61,14 @@ fn main() -> anyhow::Result<()> {
                     "  {}",
                     "Run with --apply to execute renames.".yellow().dimmed()
                 );
+                if !conflicts.is_empty() {
+                    println!(
+                        "  {}",
+                        "Resolve conflicts or use --force with --apply."
+                            .yellow()
+                            .dimmed()
+                    );
+                }
             }
         }
         args::Commands::Undo(args) => {
