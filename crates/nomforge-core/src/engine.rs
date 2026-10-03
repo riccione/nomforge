@@ -379,6 +379,23 @@ mod tests {
     }
 
     #[test]
+    fn plan_counter_padding_too_large_errors() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_counter_padding");
+        setup_test_dir(&tmp);
+
+        let engine = RenameEngine::new(vec![RenameRule::NumberSequence {
+            start: 1,
+            padding: 1_000_000_000,
+            position: SeqPosition::Prefix,
+        }]);
+        let files = vec![tmp.join("file1.txt"), tmp.join("file2.txt")];
+        let err = engine.plan(&files).unwrap_err();
+        assert!(err.to_string().contains("padding too large"), "err: {err}");
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
     fn plan_no_files_returns_error() {
         let engine = RenameEngine::new(vec![]);
         let result = engine.plan(&[]);
