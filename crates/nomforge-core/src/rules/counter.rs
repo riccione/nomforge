@@ -8,7 +8,10 @@ use crate::rules::{RenameContext, SeqPosition};
 /// - `position`: where to place the number relative to the stem
 /// - `counter`: the 0-based index of this file in the batch
 ///
-/// Errors when `start + counter` overflows `usize` (both values can be
+/// Errors when `padding` exceeds 32 (a `usize` counter has at most 20
+/// digits and filenames are capped at 255 bytes, so larger values are
+/// meaningless — and unbounded padding would attempt a huge allocation),
+/// and when `start + counter` overflows `usize` (both values can be
 /// user-supplied), instead of wrapping to a silently wrong sequence.
 pub fn apply_counter(
     start: usize,
@@ -16,6 +19,11 @@ pub fn apply_counter(
     position: SeqPosition,
     ctx: &RenameContext,
 ) -> Result<String> {
+    if padding > 32 {
+        return Err(NomforgeError::Conflict(format!(
+            "counter padding too large: {padding} (max 32)"
+        )));
+    }
     let num = start.checked_add(ctx.counter).ok_or_else(|| {
         NomforgeError::Conflict(format!("counter overflow: {start} + {}", ctx.counter))
     })?;
@@ -155,5 +163,24 @@ mod tests {
         let ctx = make_ctx("photo", 0);
         let out = apply_counter(usize::MAX, 0, SeqPosition::Suffix, &ctx).unwrap();
         assert_eq!(out, format!("photo{}", usize::MAX));
+    }
+
+    // --- Padding bound ---
+
+    #[test]
+    fn counter_padding_too_large_errors() {
+        let ctx = make_ctx("photo", 0);
+        let err = apply_counter(1, 33, SeqPosition::Prefix, &ctx).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("padding too large"), "msg: {msg}");
+        assert!(msg.contains("33"), "msg: {msg}");
+    }
+
+    #[test]
+    fn counter_padding_at_max_ok() {
+        let ctx = make_ctx("photo", 0);
+        let out = apply_counter(1, 32, SeqPosition::Prefix, &ctx).unwrap();
+        assert_eq!(out.len(), 32 + "photo".len());
+        assert!(out.ends_with("1photo"));
     }
 }
