@@ -268,16 +268,14 @@ impl NomforgeApp {
         }
 
         match nomforge_core::revert_last(&history_path) {
+            // Ok is only returned when at least one file was reverted.
             Ok((reverted, skipped)) => {
-                self.state.status = match (reverted, skipped) {
-                    (0, 0) => "No files to revert".into(),
-                    (0, m) => format!("Undo skipped {m} existing file(s)"),
-                    (n, 0) => format!("Reverted {n} file(s)"),
-                    (n, m) => format!("Reverted {n} file(s), skipped {m} existing"),
+                self.state.status = if skipped > 0 {
+                    format!("Reverted {reverted} file(s), skipped {skipped} existing")
+                } else {
+                    format!("Reverted {reverted} file(s)")
                 };
-                if reverted > 0 {
-                    self.preview();
-                }
+                self.preview();
             }
             Err(e) => self.state.status = format!("Undo error: {e}"),
         }

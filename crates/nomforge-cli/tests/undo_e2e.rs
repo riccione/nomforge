@@ -177,7 +177,8 @@ fn cli_undo_multi_batch() {
     let _ = std::fs::remove_file(&undo_path);
 }
 
-// Test 7: undo must not clobber a file recreated at the original path
+// Test 7: undo must not clobber a file recreated at the original path,
+// must fail loudly, and must keep the history for a retry
 #[test]
 fn cli_undo_preserves_recreated_source() {
     let tmp = common::create_test_dir(&[("file.txt", "original")]);
@@ -199,18 +200,72 @@ fn cli_undo_preserves_recreated_source() {
     // User recreates the original path with new content
     std::fs::write(tmp.path().join("file.txt"), "user recreated").unwrap();
 
-    // Undo must skip instead of destroying the recreated file
+    // Undo must refuse to destroy the recreated file and must not report
+    // success (exit 0 / green "Reverted 0") when nothing was reverted.
     let (exit_code, stdout, stderr) =
         common::run_nomforge(&["undo", "--history-file", undo_path.to_str().unwrap()]);
-    assert_eq!(exit_code, 0, "stderr: {stderr}");
-    assert!(stdout.contains("Skipped"), "stdout: {stdout}");
-    assert!(stdout.contains("Reverted 0"), "stdout: {stdout}");
+    assert_ne!(exit_code, 0, "stdout: {stdout}");
+    assert!(
+        stderr.contains("no files could be reverted"),
+        "stderr: {stderr}"
+    );
     assert_eq!(
         common::read_content(&tmp.path().join("file.txt")),
         "user recreated"
     );
     // The renamed file is left in place
     assert!(common::file_names(tmp.path()).contains(&"pre_file.txt".to_string()));
+    // History survived the failed undo
+    assert!(undo_path.exists());
+
+    // A second attempt still sees the history (not "No undo history")
+    let (exit_code, stdout, stderr) =
+        common::run_nomforge(&["undo", "--history-file", undo_path.to_str().unwrap()]);
+    assert_ne!(exit_code, 0, "stdout: {stdout}");
+    assert!(!stdout.contains("No undo history"), "stdout: {stdout}");
+    assert!(
+        stderr.contains("no files could be reverted"),
+        "stderr: {stderr}"
+    );
+
+    let _ = std::fs::remove_file(&undo_path);
+}
+
+// Test 8: undo with a missing target fails loudly and keeps the history
+#[test]
+fn cli_undo_missing_target_exits_nonzero() {
+    let tmp = common::create_test_dir(&[("file.txt", "c")]);
+    let undo_path = external_undo_path(&tmp);
+
+    let (exit_code, _, _) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--prefix",
+        "pre_",
+        "--apply",
+        "--history-file",
+        undo_path.to_str().unwrap(),
+    ]);
+    assert_eq!(exit_code, 0);
+
+    // The renamed file (undo target) disappears before the undo runs
+    std::fs::remove_file(tmp.path().join("pre_file.txt")).unwrap();
+
+    let (exit_code, stdout, stderr) =
+        common::run_nomforge(&["undo", "--history-file", undo_path.to_str().unwrap()]);
+    assert_ne!(exit_code, 0, "stdout: {stdout}");
+    assert!(
+        stderr.contains("no files could be reverted"),
+        "stderr: {stderr}"
+    );
+    assert!(undo_path.exists(), "history must survive the failed undo");
+
+    // History still intact for a retry once the target is restored
+    let (exit_code, stdout, _) =
+        common::run_nomforge(&["undo", "--history-file", undo_path.to_str().unwrap()]);
+    assert_ne!(exit_code, 0, "stdout: {stdout}");
+    assert!(!stdout.contains("No undo history"), "stdout: {stdout}");
 
     let _ = std::fs::remove_file(&undo_path);
 }

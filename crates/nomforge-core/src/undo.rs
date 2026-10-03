@@ -114,20 +114,24 @@ pub fn log_renames(path: &Path, results: &[RenameResult]) -> Result<()> {
 /// exists (e.g. the user recreated the file after the forward rename).
 /// Existing sources are never overwritten — on Unix, `rename(2)` would
 /// silently replace them. Residual TOCTOU: the source could appear between
-/// the existence check and the rename. Entries whose target is missing are
-/// neither reverted nor counted as skipped.
+/// the existence check and the rename.
 ///
-/// The batch is removed from the log even when entries are skipped.
+/// `Ok` is only returned when at least one file was reverted. If nothing
+/// could be reverted, an error is returned and the log is left untouched so
+/// the undo can be retried. On partial failure the unreverted entries
+/// (skipped or with missing targets) are retained as the newest batch; the
+/// batch is only removed once every entry has been reverted.
 pub fn revert_last(path: &Path) -> Result<(usize, usize)> {
     let mut log = load_undo_log(path)?;
 
-    let batch = log
+    let mut batch = log
         .batches
         .pop()
         .ok_or_else(|| NomforgeError::UndoLog("No undo history found".into()))?;
 
     let mut reverted = 0;
     let mut skipped = 0;
+    let mut failed: Vec<UndoEntry> = Vec::new();
     for entry in batch.operations.iter().rev() {
         // Refuse to overwrite a file recreated at the original path
         // (rename(2) would silently replace it on Unix). Residual TOCTOU:
@@ -136,11 +140,33 @@ pub fn revert_last(path: &Path) -> Result<(usize, usize)> {
         // would replace too.
         if fs::symlink_metadata(&entry.source).is_ok() {
             skipped += 1;
+            failed.push(entry.clone());
             continue;
         }
         if fs::rename(&entry.target, &entry.source).is_ok() {
             reverted += 1;
+        } else {
+            failed.push(entry.clone());
         }
+    }
+
+    if reverted == 0 {
+        // Nothing changed: leave the on-disk log untouched (the pop above
+        // was in-memory only) so the undo can be retried after the user
+        // resolves the blocking files.
+        return Err(NomforgeError::UndoLog(if skipped > 0 {
+            format!("no files could be reverted ({skipped} existing file(s) skipped)")
+        } else {
+            "no files could be reverted".into()
+        }));
+    }
+
+    if !failed.is_empty() {
+        // Retain unreverted entries as the newest batch (reversed back to
+        // their original relative order) so the next undo retries them.
+        failed.reverse();
+        batch.operations = failed;
+        log.batches.push(batch);
     }
 
     save_undo_log(path, &log)?;
@@ -352,9 +378,11 @@ mod tests {
         }];
         log_renames(&path, &results).unwrap();
 
-        let (reverted, skipped) = revert_last(&path).unwrap();
-        assert_eq!(reverted, 0);
-        assert_eq!(skipped, 1);
+        // Nothing could be reverted: error, and the history must survive.
+        let err = revert_last(&path).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("no files could be reverted"), "msg: {msg}");
+        assert!(msg.contains("skipped"), "msg: {msg}");
         // The recreated file must survive with its own content
         assert_eq!(
             fs::read_to_string(tmp.join("original.txt")).unwrap(),
@@ -364,7 +392,19 @@ mod tests {
             fs::read_to_string(tmp.join("renamed.txt")).unwrap(),
             "original"
         );
-        // Batch was consumed even though everything was skipped
+        assert_eq!(undo_count(&path).unwrap(), 1);
+
+        // Recovery: once the user removes the blocking file, the retained
+        // entry can be retried.
+        fs::remove_file(tmp.join("original.txt")).unwrap();
+        let (reverted, skipped) = revert_last(&path).unwrap();
+        assert_eq!(reverted, 1);
+        assert_eq!(skipped, 0);
+        assert_eq!(
+            fs::read_to_string(tmp.join("original.txt")).unwrap(),
+            "original"
+        );
+        assert!(!tmp.join("renamed.txt").exists());
         assert_eq!(undo_count(&path).unwrap(), 0);
 
         cleanup(&path);
@@ -416,6 +456,8 @@ mod tests {
             fs::read_to_string(tmp.join("other_renamed.txt")).unwrap(),
             "other"
         );
+        // The unreverted skip entry is retained as the newest batch for retry
+        assert_eq!(undo_count(&path).unwrap(), 1);
 
         cleanup(&path);
         let _ = fs::remove_dir_all(&tmp);
@@ -443,15 +485,53 @@ mod tests {
         }];
         log_renames(&path, &results).unwrap();
 
-        let (reverted, skipped) = revert_last(&path).unwrap();
-        assert_eq!(reverted, 0);
-        assert_eq!(skipped, 1);
+        let err = revert_last(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("no files could be reverted"),
+            "err: {err}"
+        );
         let meta = fs::symlink_metadata(tmp.join("original.txt")).unwrap();
         assert!(meta.file_type().is_symlink());
         assert_eq!(
             fs::read_to_string(tmp.join("renamed.txt")).unwrap(),
             "content"
         );
+        // History untouched
+        assert_eq!(undo_count(&path).unwrap(), 1);
+
+        cleanup(&path);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn revert_missing_target_keeps_history() {
+        let tmp = PathBuf::from("/tmp/nomforge_undo_revert_missing_target");
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("file.txt"), "c").unwrap();
+
+        let path = test_undo_path("revert_missing_target");
+        cleanup(&path);
+
+        fs::rename(tmp.join("file.txt"), tmp.join("renamed.txt")).unwrap();
+        // The renamed file (the undo target) disappears before the undo runs
+        fs::remove_file(tmp.join("renamed.txt")).unwrap();
+
+        let results = vec![RenameResult {
+            source: tmp.join("file.txt"),
+            target: tmp.join("renamed.txt"),
+            success: true,
+            error: None,
+        }];
+        log_renames(&path, &results).unwrap();
+
+        let err = revert_last(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("no files could be reverted"),
+            "err: {err}"
+        );
+        // History untouched: the batch survives for a retry
+        assert_eq!(undo_count(&path).unwrap(), 1);
+        assert!(!tmp.join("file.txt").exists());
 
         cleanup(&path);
         let _ = fs::remove_dir_all(&tmp);

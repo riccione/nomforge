@@ -110,10 +110,12 @@ fn undo_when_target_deleted() {
     // Delete one of the renamed files
     fs::remove_file(tmp.path().join("renamed_file1.txt")).unwrap();
 
-    // Undo should handle the missing file gracefully
-    let (reverted, _) = revert_last(&undo_path).unwrap();
-    // file2 should be restored, file1 cannot be restored (renamed file was deleted)
-    assert!(reverted <= 2);
+    // Undo should revert what it can and retain the rest
+    let (reverted, skipped) = revert_last(&undo_path).unwrap();
+    // file2 restored; file1's entry (renamed file was deleted) is retained
+    assert_eq!(reverted, 1);
+    assert_eq!(skipped, 0);
+    assert_eq!(undo_count(&undo_path).unwrap(), 1);
 
     // file2 should be back
     let names = common::file_names(tmp.path());
