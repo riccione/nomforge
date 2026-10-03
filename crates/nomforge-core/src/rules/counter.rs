@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{NomforgeError, Result};
 use crate::rules::{RenameContext, SeqPosition};
 
 /// Apply a sequential number to the filename stem.
@@ -7,13 +7,18 @@ use crate::rules::{RenameContext, SeqPosition};
 /// - `padding`: minimum number of digits (zero-padded)
 /// - `position`: where to place the number relative to the stem
 /// - `counter`: the 0-based index of this file in the batch
+///
+/// Errors when `start + counter` overflows `usize` (both values can be
+/// user-supplied), instead of wrapping to a silently wrong sequence.
 pub fn apply_counter(
     start: usize,
     padding: usize,
     position: SeqPosition,
     ctx: &RenameContext,
 ) -> Result<String> {
-    let num = start + ctx.counter;
+    let num = start.checked_add(ctx.counter).ok_or_else(|| {
+        NomforgeError::Conflict(format!("counter overflow: {start} + {}", ctx.counter))
+    })?;
     let padded = format!("{:0>width$}", num, width = padding);
     Ok(match position {
         SeqPosition::Prefix => format!("{}{}", padded, ctx.stem),
@@ -132,5 +137,23 @@ mod tests {
             apply_counter(10, 3, SeqPosition::Prefix, &ctx).unwrap(),
             "015file"
         );
+    }
+
+    // --- Overflow ---
+
+    #[test]
+    fn counter_overflow_errors() {
+        let ctx = make_ctx("photo", 1);
+        let err = apply_counter(usize::MAX, 3, SeqPosition::Prefix, &ctx).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("counter overflow"), "msg: {msg}");
+        assert!(msg.contains("18446744073709551615"), "msg: {msg}");
+    }
+
+    #[test]
+    fn counter_max_start_no_overflow() {
+        let ctx = make_ctx("photo", 0);
+        let out = apply_counter(usize::MAX, 0, SeqPosition::Suffix, &ctx).unwrap();
+        assert_eq!(out, format!("photo{}", usize::MAX));
     }
 }

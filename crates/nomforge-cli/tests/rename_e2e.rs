@@ -452,3 +452,25 @@ fn cli_rejects_traversal_replacement() {
     assert!(stderr.contains("invalid name"), "stderr: {stderr}");
     assert_eq!(common::file_names(tmp.path()), vec!["doc.txt"]);
 }
+
+// Counter start overflow is rejected during planning instead of panicking
+// (debug) or silently wrapping the sequence (release)
+#[test]
+fn cli_counter_overflow_exits_nonzero() {
+    let tmp = common::create_test_dir(&[("file1.txt", "a"), ("file2.txt", "b")]);
+
+    let (exit_code, stdout, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--counter-start",
+        "18446744073709551615",
+    ]);
+
+    assert_ne!(exit_code, 0, "stdout: {stdout}");
+    assert!(stderr.contains("counter overflow"), "stderr: {stderr}");
+    assert_eq!(
+        common::file_names(tmp.path()),
+        vec!["file1.txt", "file2.txt"]
+    );
+}
