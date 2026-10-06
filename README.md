@@ -146,6 +146,45 @@ When opening a Pull Request, include the following:
   - [ ] `cargo test --workspace`
   - [ ] Updated documentation if applicable
 
+---
+
+## Release
+
+Releases are prepared on a `release/v*` branch and tagged manually from `main` after the release PR is merged.
+
+```bash
+# Create a release branch
+git checkout -b release/v0.3.0
+
+# Bump the workspace version
+cargo release minor --execute
+
+# Generate the changelog
+git cliff -o CHANGELOG.md --tag v0.3.0
+
+# Review and commit the changes
+git status
+git diff
+git add .
+git commit -m "chore(release): prepare v0.3.0"
+
+# Push the release branch and open a PR
+git push -u origin release/v0.3.0
+```
+
+After the release PR is merged, create the tag from `main`:
+
+```bash
+git checkout main
+git pull
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The GitHub release workflow is triggered by the tag.
+
+---
+
 ## License
 
 This project is licensed under the terms of the Apache License 2.0. For the full legal text detailing permissions, limitations, and liabilities, please consult the complete [LICENSE](LICENSE) file included in this repository.
