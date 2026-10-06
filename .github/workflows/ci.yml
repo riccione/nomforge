@@ -1,3 +1,4 @@
+---
 name: CI
 
 on:
@@ -16,4 +17,4 @@ on:
 
 jobs:
   ci:
-    uses: riccione/github-workflows/.github/workflows/rust-ci.yml@v3
+    uses: riccione/github-workflows/.github/workflows/rust-ci.yml@309464f75695501b26e988010273cc182de38f3a
