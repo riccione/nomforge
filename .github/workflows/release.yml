@@ -16,7 +16,7 @@ env:
 
 jobs:
   release:
-    uses: riccione/github-workflows/.github/workflows/rust-release.yml@f8c0ba47b550fce0da086aef4cf7c4295812bc5b
+    uses: riccione/github-workflows/.github/workflows/rust-release.yml@952f731ea96c1c9c35f13bebc14176791b94d0d0
     with:
       tag: ${{ github.ref_name }}
       bin_names: "nomforge-cli nomforge-gui"
