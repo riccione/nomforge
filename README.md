@@ -12,6 +12,7 @@ A bulk file renaming tool with CLI and GUI interfaces, built in Rust.
 - **File filtering**: by extension, include/exclude regex patterns, recursive scan, hidden files
 - **Smart truncation**: automatically truncates filenames exceeding OS limits (255 bytes)
 - **Auto-disambiguation**: adds `_1`, `_2`, etc. when a changed target already exists (no-op plans are never renamed)
+- **GUI settings**: light/dark/system theme and font size, applied live and remembered between runs
 
 ## Architecture
 
