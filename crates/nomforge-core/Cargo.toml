@@ -4,16 +4,15 @@ version.workspace = true
 edition.workspace = true
 description = "Core library for nomforge bulk file renamer"
 license.workspace = true
-homepage.workspace = true
 documentation.workspace = true
 repository.workspace = true
 
 [dependencies]
 regex = "1.13"
-walkdir = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
+walkdir = "2.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
 chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]

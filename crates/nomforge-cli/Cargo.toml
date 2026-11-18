@@ -4,14 +4,13 @@ version.workspace = true
 edition.workspace = true
 description = "CLI for nomforge bulk file renamer"
 license.workspace = true
-homepage.workspace = true
 documentation.workspace = true
 repository.workspace = true
 
 [dependencies]
 nomforge-core = { path = "../nomforge-core" }
 clap = { version = "4.6", features = ["derive"] }
-anyhow = "1"
+anyhow = "1.0"
 colored = "3"
 
 [dev-dependencies]
