@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use nomforge_core::{Conflict, RenamePlan, RenameResult, RenameRule};
 
+use crate::settings::{Settings, ThemeSetting};
+
 /// Application state for the nomforge GUI.
 pub struct State {
     /// Target directory to scan.
@@ -37,6 +39,15 @@ pub struct State {
 
     /// Advanced mode (shows regex fields).
     pub advanced_mode: bool,
+
+    /// GUI settings (theme and font size), persisted between runs.
+    pub settings: Settings,
+
+    /// Settings drafts, committed when the user finishes editing them.
+    pub draft_theme: ThemeSetting,
+    pub draft_font_size: f32,
+    pub draft_font_size_input: String,
+    pub show_settings_modal: bool,
 
     /// Conflict detection.
     pub show_conflict_modal: bool,
@@ -87,6 +98,11 @@ impl Default for State {
             no_undo: false,
             show_undo_modal: false,
             advanced_mode: false,
+            settings: Settings::default(),
+            draft_theme: ThemeSetting::default(),
+            draft_font_size: crate::settings::DEFAULT_FONT_SIZE,
+            draft_font_size_input: format!("{:.0}", crate::settings::DEFAULT_FONT_SIZE),
+            show_settings_modal: false,
             show_conflict_modal: false,
             pending_conflicts: Vec::new(),
             verbose: false,
@@ -198,6 +214,14 @@ impl State {
             },
             include_hidden: self.hidden,
         }
+    }
+
+    /// Reset the settings drafts from the applied settings and open the modal.
+    pub fn open_settings(&mut self) {
+        self.draft_theme = self.settings.theme;
+        self.draft_font_size = self.settings.font_size;
+        self.draft_font_size_input = format!("{:.0}", self.settings.font_size);
+        self.show_settings_modal = true;
     }
 
     /// Reset results and plans.
@@ -414,5 +438,21 @@ mod tests {
         assert!(state.results.is_empty());
         assert!(!state.applied);
         assert_eq!(state.status, "Ready");
+    }
+
+    #[test]
+    fn open_settings_syncs_drafts() {
+        let mut state = State {
+            settings: Settings {
+                theme: ThemeSetting::Dark,
+                font_size: 20.0,
+            },
+            ..Default::default()
+        };
+        state.open_settings();
+        assert!(state.show_settings_modal);
+        assert_eq!(state.draft_theme, ThemeSetting::Dark);
+        assert_eq!(state.draft_font_size, 20.0);
+        assert_eq!(state.draft_font_size_input, "20");
     }
 }

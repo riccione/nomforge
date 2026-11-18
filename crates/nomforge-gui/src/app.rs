@@ -10,7 +10,14 @@ pub struct NomforgeApp {
 
 impl eframe::App for NomforgeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        ui.heading(format!("nomforge v{}", { env!("CARGO_PKG_VERSION") }));
+        ui.horizontal(|ui| {
+            ui.heading(format!("nomforge v{}", { env!("CARGO_PKG_VERSION") }));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("⚙ Settings").clicked() {
+                    self.state.open_settings();
+                }
+            });
+        });
         ui.separator();
 
         // Directory picker
@@ -77,6 +84,9 @@ impl eframe::App for NomforgeApp {
             }
         }
 
+        // Settings modal
+        crate::panels::settings::show(ui, &mut self.state);
+
         // Conflict confirmation modal
         self.show_conflict_modal(ui);
 
@@ -104,6 +114,11 @@ impl eframe::App for NomforgeApp {
 }
 
 impl NomforgeApp {
+    /// Create the app with the given state (settings already loaded).
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+
     fn scan_files(&mut self) {
         self.state.reset_output();
 

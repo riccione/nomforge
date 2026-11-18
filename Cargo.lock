@@ -2112,6 +2112,7 @@ dependencies = [
  "eframe",
  "nomforge-core",
  "rfd",
+ "serde",
  "serde_json",
  "tempfile",
 ]
