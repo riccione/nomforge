@@ -11,7 +11,7 @@ repository.workspace = true
 [dependencies]
 nomforge-core = { path = "../nomforge-core" }
 clap = { version = "4.6", features = ["derive"] }
-anyhow = "1"
+anyhow = "1.0"
 colored = "3"
 
 [dev-dependencies]
