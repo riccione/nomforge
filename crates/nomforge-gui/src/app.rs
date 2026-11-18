@@ -57,7 +57,7 @@ impl eframe::App for NomforgeApp {
 
         // Undo confirmation modal
         if self.state.show_undo_modal {
-            let modal = egui::Modal::new(egui::Id::new("undo_confirm")).show(ui.ctx(), |ui| {
+            let modal = egui::Modal::new(egui::Id::unique("undo_confirm")).show(ui.ctx(), |ui| {
                 ui.set_width(300.0);
                 ui.heading("Undo Last Batch?");
                 ui.label("This will revert the most recent rename operation.");
@@ -319,7 +319,7 @@ impl NomforgeApp {
             return;
         }
 
-        let modal = egui::Modal::new(egui::Id::new("conflict_confirm")).show(ui.ctx(), |ui| {
+        let modal = egui::Modal::new(egui::Id::unique("conflict_confirm")).show(ui.ctx(), |ui| {
             ui.set_width(400.0);
             ui.heading("Conflicts Detected");
             ui.label("The following conflicts were found:");
