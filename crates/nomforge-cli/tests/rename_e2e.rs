@@ -496,3 +496,23 @@ fn cli_counter_padding_too_large_exits_nonzero() {
         vec!["file1.txt", "file2.txt"]
     );
 }
+
+// Recursive scans never descend into hidden directories
+#[test]
+fn cli_recursive_skips_hidden_directories() {
+    let tmp = common::create_test_dir(&[("a.txt", "a"), (".git/config", "c")]);
+
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--recursive",
+        "--prefix",
+        "x_",
+        "--apply",
+    ]);
+
+    assert_eq!(exit_code, 0, "stderr: {stderr}");
+    assert_eq!(common::file_names(tmp.path()), vec!["x_a.txt"]);
+    assert!(tmp.path().join(".git").join("config").exists());
+}

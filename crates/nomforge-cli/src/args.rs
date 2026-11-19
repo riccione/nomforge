@@ -83,7 +83,7 @@ pub struct RenameArgs {
     #[arg(short = 'R', long)]
     pub recursive: bool,
 
-    /// Include hidden files (starting with .)
+    /// Include hidden files and directories (names starting with .)
     #[arg(long)]
     pub hidden: bool,
 

@@ -16,8 +16,16 @@ pub struct ScanOptions {
     pub exclude_pattern: Option<String>,
     /// Only include files with these extensions (without dot).
     pub extensions: Option<Vec<String>>,
-    /// Include hidden files (starting with `.`).
+    /// Include hidden files and directories (names starting with `.`).
+    ///
+    /// When `false`, hidden directories are pruned entirely, so nothing inside
+    /// them is scanned. The scan root itself is always exempt.
     pub include_hidden: bool,
+}
+
+/// Whether a file or directory name is hidden (starts with `.`).
+fn is_hidden_name(name: &std::ffi::OsStr) -> bool {
+    name.to_string_lossy().starts_with('.')
 }
 
 /// Scan a directory for files matching the given options.
@@ -50,14 +58,16 @@ pub fn scan_files(dir: &Path, options: &ScanOptions) -> Result<Vec<PathBuf>> {
 
     let mut files: Vec<PathBuf> = walker
         .into_iter()
+        // Prune hidden directories (so nothing inside them is visited) and
+        // skip hidden files. The scan root is exempt: choosing a hidden
+        // directory explicitly should still scan its contents.
+        .filter_entry(|e| {
+            options.include_hidden || e.depth() == 0 || !is_hidden_name(e.file_name())
+        })
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| NomforgeError::WalkDir(e.to_string()))?
         .into_iter()
         .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy();
-            options.include_hidden || !name.starts_with('.')
-        })
         .filter(|e| {
             let name = e.file_name().to_string_lossy();
             match &include_re {
@@ -286,5 +296,88 @@ mod tests {
         let tmp = PathBuf::from("/tmp/nomforge_test_scan_nonexistent_12345");
         let result = scan_files(&tmp, &Default::default());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn scan_excludes_files_in_hidden_directories() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_scan_hidden_dirs");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join(".git").join("objects")).unwrap();
+        fs::create_dir_all(tmp.join(".venv").join("lib")).unwrap();
+        fs::create_dir_all(tmp.join("visible")).unwrap();
+        fs::write(tmp.join(".git").join("config"), "c").unwrap();
+        fs::write(tmp.join(".git").join("objects").join("abc"), "c").unwrap();
+        fs::write(tmp.join(".venv").join("lib").join("site.py"), "c").unwrap();
+        fs::write(tmp.join("visible").join("ok.txt"), "c").unwrap();
+
+        let options = ScanOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        let files = scan_files(&tmp, &options).unwrap();
+
+        assert_eq!(files, vec![tmp.join("visible").join("ok.txt")]);
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn scan_include_hidden_includes_files_in_hidden_directories() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_scan_hidden_dirs_included");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join(".git")).unwrap();
+        fs::write(tmp.join(".git").join("config"), "c").unwrap();
+
+        let options = ScanOptions {
+            recursive: true,
+            include_hidden: true,
+            ..Default::default()
+        };
+        let files = scan_files(&tmp, &options).unwrap();
+
+        assert!(files.iter().any(|f| f.ends_with(".git/config")));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn scan_hidden_root_still_scanned() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_scan_hidden_root/.hidden_root");
+        let _ = fs::remove_dir_all(tmp.parent().unwrap());
+        fs::create_dir_all(tmp.join("nested")).unwrap();
+        fs::write(tmp.join("child.txt"), "c").unwrap();
+        fs::write(tmp.join("nested").join("child2.txt"), "c").unwrap();
+
+        let options = ScanOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        let files = scan_files(&tmp, &options).unwrap();
+
+        // Selecting a hidden directory explicitly must not exclude its contents.
+        assert!(files.iter().any(|f| f.ends_with("child.txt")));
+        assert!(files.iter().any(|f| f.ends_with("nested/child2.txt")));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn scan_deeply_nested_hidden_directory_excluded() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_scan_deep_hidden");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("a").join(".b").join("c")).unwrap();
+        fs::create_dir_all(tmp.join("a").join("c")).unwrap();
+        fs::write(tmp.join("a").join(".b").join("c").join("d.txt"), "c").unwrap();
+        fs::write(tmp.join("a").join("c").join("d.txt"), "c").unwrap();
+
+        let options = ScanOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        let files = scan_files(&tmp, &options).unwrap();
+
+        assert_eq!(files, vec![tmp.join("a").join("c").join("d.txt")]);
+
+        cleanup_test_dir(&tmp);
     }
 }
