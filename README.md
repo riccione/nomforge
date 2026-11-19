@@ -9,7 +9,7 @@ A bulk file renaming tool with CLI and GUI interfaces, built in Rust.
 - **Dry-run by default**: preview all changes before applying
 - **Undo support**: revert the last batch of renames via JSON log
 - **Conflict detection**: aborts `--apply` when multiple files would collide (`--force` to proceed; conflicts fail instead of overwriting)
-- **File filtering**: by extension, include/exclude regex patterns, recursive scan, hidden files
+- **File filtering**: by extension, include/exclude regex patterns, recursive scan, hidden files and directories
 - **Smart truncation**: automatically truncates filenames exceeding OS limits (255 bytes)
 - **Auto-disambiguation**: adds `_1`, `_2`, etc. when a changed target already exists (no-op plans are never renamed)
 - **GUI settings**: light/dark/system theme and font size, applied live and remembered between runs
@@ -68,7 +68,7 @@ nomforge-cli rename --dir ./project --recursive --find "old" --replace "new" --a
 # Include/exclude patterns
 nomforge-cli rename --dir ./photos --include "IMG_\d+" --exclude "backup" --prefix "photo_" --apply
 
-# Include hidden files
+# Include hidden files and directories
 nomforge-cli rename --dir ./config --hidden --find "." --replace "_" --apply
 ```
 
@@ -106,7 +106,7 @@ nomforge-cli undo --history-file /path/to/undo.json
 | `--include` | `-i` | Include only files matching this regex |
 | `--exclude` | | Exclude files matching this regex |
 | `--recursive` | `-R` | Scan subdirectories recursively |
-| `--hidden` | | Include hidden files |
+| `--hidden` | | Include hidden files and directories |
 | `--apply` | `-a` | Actually apply renames (default is dry-run) |
 | `--force` | | Apply even when conflicts are detected; conflicting renames fail instead of overwriting |
 | `--no-undo` | | Skip logging to undo history |

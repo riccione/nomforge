@@ -54,7 +54,10 @@ impl eframe::App for NomforgeApp {
                 ui.text_edit_singleline(&mut self.state.exclude);
             });
             ui.checkbox(&mut self.state.recursive, "Recursive");
-            ui.checkbox(&mut self.state.hidden, "Include hidden files");
+            ui.checkbox(
+                &mut self.state.hidden,
+                "Include hidden files and directories",
+            );
         });
 
         // Undo settings
