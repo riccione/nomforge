@@ -7,19 +7,28 @@ use crate::args::RenameArgs;
 pub fn build_rules(args: &RenameArgs) -> Result<Vec<RenameRule>> {
     let mut rules = Vec::new();
 
-    // Find & Replace (plain text)
-    if let (Some(find), replace) = (&args.find, &args.replace) {
+    // Replacement flags are meaningless without their matcher; rejecting them
+    // avoids silently dropping what the user asked for.
+    if args.replace.is_some() && args.find.is_none() {
+        anyhow::bail!("--replace requires --find");
+    }
+    if args.replacement.is_some() && args.regex.is_none() {
+        anyhow::bail!("--replacement requires --regex");
+    }
+
+    // Find & Replace (plain text); without --replace the matches are removed
+    if let Some(find) = &args.find {
         rules.push(RenameRule::FindReplace {
             find: find.clone(),
-            replace: replace.clone().unwrap_or_default(),
+            replace: args.replace.clone().unwrap_or_default(),
         });
     }
 
-    // Regex Replace
-    if let (Some(pattern), replacement) = (&args.regex, &args.replacement) {
+    // Regex Replace; without --replacement the matches are removed
+    if let Some(pattern) = &args.regex {
         rules.push(RenameRule::RegexReplace {
             pattern: pattern.clone(),
-            replacement: replacement.clone().unwrap_or_default(),
+            replacement: args.replacement.clone().unwrap_or_default(),
         });
     }
 
@@ -136,6 +145,58 @@ mod tests {
         assert_eq!(rules.len(), 1);
         assert!(
             matches!(&rules[0], RenameRule::FindReplace { find, replace } if find == "DSC" && replace == "photo")
+        );
+    }
+
+    #[test]
+    fn build_rules_replace_without_find_errors() {
+        let args = RenameArgs {
+            replace: Some("photo".into()),
+            ..default_args()
+        };
+        let err = build_rules(&args).unwrap_err();
+        assert!(
+            err.to_string().contains("--replace requires --find"),
+            "err: {err}"
+        );
+    }
+
+    #[test]
+    fn build_rules_replacement_without_regex_errors() {
+        let args = RenameArgs {
+            replacement: Some("img_$1".into()),
+            ..default_args()
+        };
+        let err = build_rules(&args).unwrap_err();
+        assert!(
+            err.to_string().contains("--replacement requires --regex"),
+            "err: {err}"
+        );
+    }
+
+    #[test]
+    fn build_rules_find_without_replace_deletes() {
+        let args = RenameArgs {
+            find: Some("DSC".into()),
+            ..default_args()
+        };
+        let rules = build_rules(&args).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(
+            matches!(&rules[0], RenameRule::FindReplace { find, replace } if find == "DSC" && replace.is_empty())
+        );
+    }
+
+    #[test]
+    fn build_rules_regex_without_replacement_deletes() {
+        let args = RenameArgs {
+            regex: Some(r"\d+".into()),
+            ..default_args()
+        };
+        let rules = build_rules(&args).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(
+            matches!(&rules[0], RenameRule::RegexReplace { pattern, replacement } if pattern == r"\d+" && replacement.is_empty())
         );
     }
 

@@ -546,3 +546,50 @@ fn cli_recursive_ignores_symlinked_directories() {
     assert!(outside.join("secret.txt").exists());
     assert!(!outside.join("x_secret.txt").exists());
 }
+
+// Replacement flags without their matcher are rejected, not silently ignored
+#[test]
+fn cli_replace_without_find_errors() {
+    let tmp = common::create_test_dir(&[("file.txt", "c")]);
+
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--prefix",
+        "pre_",
+        "--replace",
+        "photo",
+        "--apply",
+    ]);
+
+    assert_ne!(exit_code, 0, "orphaned --replace must be rejected");
+    assert!(
+        stderr.contains("--replace requires --find"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(common::file_names(tmp.path()), vec!["file.txt"]);
+}
+
+#[test]
+fn cli_replacement_without_regex_errors() {
+    let tmp = common::create_test_dir(&[("file.txt", "c")]);
+
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--prefix",
+        "pre_",
+        "--replacement",
+        "x",
+        "--apply",
+    ]);
+
+    assert_ne!(exit_code, 0, "orphaned --replacement must be rejected");
+    assert!(
+        stderr.contains("--replacement requires --regex"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(common::file_names(tmp.path()), vec!["file.txt"]);
+}
