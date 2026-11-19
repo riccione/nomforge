@@ -8,19 +8,19 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
-
-env:
-  CLI_BIN: nomforge-cli
-  GUI_BIN: nomforge-gui
+  contents: read
 
 jobs:
   release:
-    uses: riccione/github-workflows/.github/workflows/rust-release.yml@952f731ea96c1c9c35f13bebc14176791b94d0d0
+    uses: riccione/github-workflows/.github/workflows/rust-release.yml@7ed8a722bf3860061e17c1b84d0e1cf3a5a2fb5d
+    permissions:
+      contents: write
+      id-token: write
     with:
       tag: ${{ github.ref_name }}
       bin_names: "nomforge-cli nomforge-gui"
       apt_packages: "libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libgtk-3-dev libatk1.0-dev libgdk-pixbuf2.0-dev libpango1.0-dev libcairo2-dev"
-      use_upx: true
+      use_upx: false
+      build_musl: false
       cargo_args: "--locked"
     secrets: inherit
