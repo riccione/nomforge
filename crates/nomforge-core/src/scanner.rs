@@ -29,6 +29,11 @@ fn is_hidden_name(name: &std::ffi::OsStr) -> bool {
 }
 
 /// Scan a directory for files matching the given options.
+///
+/// Symbolic links are never followed: symlinked directories are not descended
+/// into and symlinked files are ignored, so a scan can only return files that
+/// actually live inside `dir`. This also means symlink loops cannot abort a
+/// scan.
 pub fn scan_files(dir: &Path, options: &ScanOptions) -> Result<Vec<PathBuf>> {
     let include_re = options
         .include_pattern
@@ -50,8 +55,10 @@ pub fn scan_files(dir: &Path, options: &ScanOptions) -> Result<Vec<PathBuf>> {
             reason: e.to_string(),
         })?;
 
+    // `follow_links` stays at walkdir's default (false). A root that is itself
+    // a symlink is still traversed (walkdir's `follow_root_links` default).
     let walker = if options.recursive {
-        WalkDir::new(dir).follow_links(true)
+        WalkDir::new(dir)
     } else {
         WalkDir::new(dir).max_depth(1)
     };
@@ -379,5 +386,105 @@ mod tests {
         assert_eq!(files, vec![tmp.join("a").join("c").join("d.txt")]);
 
         cleanup_test_dir(&tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_does_not_follow_symlinked_directories() {
+        use std::os::unix::fs::symlink;
+
+        let base = PathBuf::from("/tmp/nomforge_test_scan_symlink_dir");
+        let _ = fs::remove_dir_all(&base);
+        let root = base.join("root");
+        let outside = base.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(root.join("file.txt"), "c").unwrap();
+        fs::write(outside.join("secret.txt"), "c").unwrap();
+        symlink(&outside, root.join("link")).unwrap();
+
+        let options = ScanOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        let files = scan_files(&root, &options).unwrap();
+
+        assert_eq!(files, vec![root.join("file.txt")]);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_skips_symlinked_files() {
+        use std::os::unix::fs::symlink;
+
+        let base = PathBuf::from("/tmp/nomforge_test_scan_symlink_file");
+        let _ = fs::remove_dir_all(&base);
+        let root = base.join("root");
+        let outside = base.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(root.join("real.txt"), "c").unwrap();
+        fs::write(outside.join("outside.txt"), "c").unwrap();
+        symlink(outside.join("outside.txt"), root.join("alias.txt")).unwrap();
+
+        let options = ScanOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        let files = scan_files(&root, &options).unwrap();
+
+        assert_eq!(files, vec![root.join("real.txt")]);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_symlink_loop_does_not_fail() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = PathBuf::from("/tmp/nomforge_test_scan_symlink_loop");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("file.txt"), "c").unwrap();
+        // Self-referential symlink: following it would loop forever.
+        symlink(&tmp, tmp.join("loop")).unwrap();
+
+        let options = ScanOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        let files = scan_files(&tmp, &options).unwrap();
+
+        assert_eq!(files, vec![tmp.join("file.txt")]);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_follows_symlinked_root() {
+        use std::os::unix::fs::symlink;
+
+        let base = PathBuf::from("/tmp/nomforge_test_scan_symlink_root");
+        let _ = fs::remove_dir_all(&base);
+        let real = base.join("real");
+        fs::create_dir_all(&real).unwrap();
+        fs::write(real.join("child.txt"), "c").unwrap();
+        let link_root = base.join("link");
+        symlink(&real, &link_root).unwrap();
+
+        let options = ScanOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        let files = scan_files(&link_root, &options).unwrap();
+
+        // The explicitly selected root may itself be a symlink.
+        assert_eq!(files, vec![link_root.join("child.txt")]);
+
+        let _ = fs::remove_dir_all(&base);
     }
 }

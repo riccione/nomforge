@@ -516,3 +516,33 @@ fn cli_recursive_skips_hidden_directories() {
     assert_eq!(common::file_names(tmp.path()), vec!["x_a.txt"]);
     assert!(tmp.path().join(".git").join("config").exists());
 }
+
+// Symlinks are not followed, so renames cannot escape the selected directory
+#[cfg(unix)]
+#[test]
+fn cli_recursive_ignores_symlinked_directories() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("root");
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(root.join("a.txt"), "a").unwrap();
+    std::fs::write(outside.join("secret.txt"), "s").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+
+    let (exit_code, stdout, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        root.to_str().unwrap(),
+        "--recursive",
+        "--prefix",
+        "x_",
+        "--apply",
+    ]);
+
+    assert_eq!(exit_code, 0, "stdout: {stdout} stderr: {stderr}");
+    assert!(root.join("x_a.txt").exists());
+    // The file behind the symlink must not be renamed.
+    assert!(outside.join("secret.txt").exists());
+    assert!(!outside.join("x_secret.txt").exists());
+}
