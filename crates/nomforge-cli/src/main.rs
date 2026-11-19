@@ -60,6 +60,13 @@ fn main() -> anyhow::Result<()> {
                         println!("  Undo history saved to: {}", history_path.display());
                     }
                 }
+
+                // Report partial failure through the exit status, after the
+                // successful renames have been logged so they stay undoable.
+                let failed = results.iter().filter(|r| !r.success).count();
+                if failed > 0 {
+                    anyhow::bail!("{failed} rename(s) failed");
+                }
             } else {
                 output::print_preview(&plans);
                 println!(
