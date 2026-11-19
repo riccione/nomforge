@@ -30,6 +30,24 @@ pub fn run_nomforge(args: &[&str]) -> (i32, String, String) {
     (exit_code, stdout, stderr)
 }
 
+/// Run the nomforge CLI with the given arguments from `current_dir`.
+///
+/// Returns (exit code, stdout, stderr).
+#[allow(dead_code, reason = "not every test binary uses every helper")]
+pub fn run_nomforge_in(current_dir: &Path, args: &[&str]) -> (i32, String, String) {
+    let output = Command::new(nomforge_bin())
+        .current_dir(current_dir)
+        .args(args)
+        .output()
+        .expect("failed to execute nomforge");
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    (exit_code, stdout, stderr)
+}
+
 /// Create a temporary directory with test files.
 pub fn create_test_dir(files: &[(&str, &str)]) -> TempDir {
     let tmp = TempDir::new().expect("failed to create temp dir");
