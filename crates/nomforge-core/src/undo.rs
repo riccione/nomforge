@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -59,18 +60,33 @@ pub fn default_undo_log_path() -> PathBuf {
 }
 
 /// Load the undo log from disk.
+///
+/// A missing file yields an empty log. If the file exists but cannot be parsed
+/// (truncated write, encoding damage, manual edits), it is moved aside to
+/// `<path>.corrupt` (or `.corrupt.N`) and an empty log is returned: the damaged
+/// history is preserved for manual recovery, but appends and undos keep
+/// working instead of failing forever.
 pub fn load_undo_log(path: &Path) -> Result<UndoLog> {
-    if !path.exists() {
-        return Ok(UndoLog::new());
-    }
+    let data = match fs::read(path) {
+        Ok(data) => data,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(UndoLog::new()),
+        Err(e) => return Err(NomforgeError::UndoLog(e.to_string())),
+    };
 
-    let data = fs::read_to_string(path).map_err(|e| NomforgeError::UndoLog(e.to_string()))?;
-    let log: UndoLog =
-        serde_json::from_str(&data).map_err(|e| NomforgeError::UndoLog(e.to_string()))?;
-    Ok(log)
+    match serde_json::from_slice(&data) {
+        Ok(log) => Ok(log),
+        Err(_) => {
+            preserve_corrupt_log(path)?;
+            Ok(UndoLog::new())
+        }
+    }
 }
 
 /// Save the undo log to disk.
+///
+/// The log is written to a sibling temp file and then atomically renamed onto
+/// `path`, so a crash or a full disk cannot leave a truncated log behind: the
+/// previous version stays intact until the new one is complete.
 pub fn save_undo_log(path: &Path, log: &UndoLog) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| NomforgeError::UndoLog(e.to_string()))?;
@@ -78,8 +94,62 @@ pub fn save_undo_log(path: &Path, log: &UndoLog) -> Result<()> {
 
     let data =
         serde_json::to_string_pretty(log).map_err(|e| NomforgeError::UndoLog(e.to_string()))?;
-    fs::write(path, data).map_err(|e| NomforgeError::UndoLog(e.to_string()))?;
+
+    let tmp_path = temp_write_path(path);
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = fs::File::create(&tmp_path)?;
+        file.write_all(data.as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&tmp_path, path)
+    })();
+
+    if let Err(e) = write_result {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(NomforgeError::UndoLog(e.to_string()));
+    }
     Ok(())
+}
+
+/// Append `suffix` to the full path (including its file name).
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut os = path.as_os_str().to_os_string();
+    os.push(suffix);
+    PathBuf::from(os)
+}
+
+/// Temporary sibling path used while writing the log.
+///
+/// The process id keeps concurrent invocations from staging into the same
+/// file; the final `fs::rename` still lets the last writer win atomically.
+fn temp_write_path(path: &Path) -> PathBuf {
+    with_suffix(path, &format!(".{}.tmp", std::process::id()))
+}
+
+/// Path for preserving an unreadable log, without clobbering earlier backups.
+fn corrupt_backup_path(path: &Path) -> PathBuf {
+    let first = with_suffix(path, ".corrupt");
+    if !first.exists() {
+        return first;
+    }
+    let mut n = 1;
+    loop {
+        let candidate = with_suffix(path, &format!(".corrupt.{n}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+/// Move a damaged log aside so its history can still be recovered manually.
+fn preserve_corrupt_log(path: &Path) -> Result<()> {
+    let backup = corrupt_backup_path(path);
+    fs::rename(path, &backup).map_err(|e| {
+        NomforgeError::UndoLog(format!(
+            "failed to preserve corrupt undo log as {}: {e}",
+            backup.display()
+        ))
+    })
 }
 
 /// Log a batch of successful rename operations.
@@ -207,6 +277,23 @@ mod tests {
     fn setup_test_files(dir: &Path) {
         fs::create_dir_all(dir).unwrap();
         fs::write(dir.join("original.txt"), "content").unwrap();
+    }
+
+    fn sample_batch(source: &str, target: &str) -> UndoBatch {
+        UndoBatch {
+            timestamp: Utc::now(),
+            operations: vec![UndoEntry {
+                source: PathBuf::from(source),
+                target: PathBuf::from(target),
+            }],
+        }
+    }
+
+    fn cleanup_corrupt_backups(path: &Path) {
+        let _ = fs::remove_file(with_suffix(path, ".corrupt"));
+        for n in 1..5 {
+            let _ = fs::remove_file(with_suffix(path, &format!(".corrupt.{n}")));
+        }
     }
 
     #[test]
@@ -553,5 +640,126 @@ mod tests {
         let path = default_undo_log_path();
         assert!(path.to_string_lossy().contains("nomforge"));
         assert!(path.to_string_lossy().ends_with("undo_log.json"));
+    }
+
+    #[test]
+    fn save_undo_log_leaves_no_temp_file() {
+        let path = test_undo_path("atomic");
+        cleanup(&path);
+
+        let mut log = UndoLog::new();
+        log.batches.push(sample_batch("/tmp/a.txt", "/tmp/b.txt"));
+        save_undo_log(&path, &log).unwrap();
+
+        assert_eq!(load_undo_log(&path).unwrap().batches.len(), 1);
+        assert!(!temp_write_path(&path).exists());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn failed_save_keeps_previous_log() {
+        let path = test_undo_path("atomic_failure");
+        cleanup(&path);
+
+        let mut log = UndoLog::new();
+        log.batches.push(sample_batch("/tmp/a.txt", "/tmp/b.txt"));
+        save_undo_log(&path, &log).unwrap();
+
+        // Block the staging path with a directory so `File::create` fails.
+        let tmp_path = temp_write_path(&path);
+        fs::create_dir_all(&tmp_path).unwrap();
+
+        let mut newer = log.clone();
+        newer.batches.push(sample_batch("/tmp/c.txt", "/tmp/d.txt"));
+        assert!(save_undo_log(&path, &newer).is_err());
+
+        // The previous log is untouched.
+        assert_eq!(load_undo_log(&path).unwrap().batches.len(), 1);
+
+        let _ = fs::remove_dir_all(&tmp_path);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn corrupt_log_is_preserved_and_starts_empty() {
+        let path = test_undo_path("corrupt");
+        cleanup(&path);
+        cleanup_corrupt_backups(&path);
+
+        fs::write(&path, "not json").unwrap();
+
+        let log = load_undo_log(&path).unwrap();
+        assert!(log.batches.is_empty());
+        assert!(!path.exists());
+
+        let backup = with_suffix(&path, ".corrupt");
+        assert!(backup.exists());
+        assert_eq!(fs::read_to_string(&backup).unwrap(), "not json");
+
+        cleanup(&path);
+        cleanup_corrupt_backups(&path);
+    }
+
+    #[test]
+    fn log_renames_recovers_from_corrupt_log() {
+        let path = test_undo_path("corrupt_recover");
+        cleanup(&path);
+        cleanup_corrupt_backups(&path);
+
+        fs::write(&path, "{ broken").unwrap();
+
+        let results = vec![RenameResult {
+            source: PathBuf::from("/tmp/a.txt"),
+            target: PathBuf::from("/tmp/b.txt"),
+            success: true,
+            error: None,
+        }];
+        log_renames(&path, &results).unwrap();
+
+        assert_eq!(undo_count(&path).unwrap(), 1);
+        assert!(with_suffix(&path, ".corrupt").exists());
+
+        cleanup(&path);
+        cleanup_corrupt_backups(&path);
+    }
+
+    #[test]
+    fn repeated_corruption_keeps_earlier_backups() {
+        let path = test_undo_path("corrupt_twice");
+        cleanup(&path);
+        cleanup_corrupt_backups(&path);
+
+        fs::write(&path, "first").unwrap();
+        load_undo_log(&path).unwrap();
+        fs::write(&path, "second").unwrap();
+        load_undo_log(&path).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(with_suffix(&path, ".corrupt")).unwrap(),
+            "first"
+        );
+        assert_eq!(
+            fs::read_to_string(with_suffix(&path, ".corrupt.1")).unwrap(),
+            "second"
+        );
+
+        cleanup(&path);
+        cleanup_corrupt_backups(&path);
+    }
+
+    #[test]
+    fn non_utf8_corruption_is_preserved() {
+        let path = test_undo_path("corrupt_bytes");
+        cleanup(&path);
+        cleanup_corrupt_backups(&path);
+
+        fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
+
+        assert!(load_undo_log(&path).unwrap().batches.is_empty());
+        assert!(with_suffix(&path, ".corrupt").exists());
+
+        cleanup(&path);
+        cleanup_corrupt_backups(&path);
     }
 }
