@@ -319,15 +319,9 @@ impl NomforgeApp {
     }
 
     fn do_apply(&mut self, plans: Vec<nomforge_core::RenamePlan>, files: Vec<std::path::PathBuf>) {
-        let engine = nomforge_core::RenameEngine::new(self.state.build_rules().unwrap_or_default());
-
-        let results = match engine.apply(&plans) {
-            Ok(r) => r,
-            Err(e) => {
-                self.state.status = format!("Apply error: {e}");
-                return;
-            }
-        };
+        // Plans are already computed; applying them never consults the rules,
+        // so nothing needs rebuilding here.
+        let results = nomforge_core::apply_plans(&plans);
 
         let renamed = results
             .iter()
@@ -509,6 +503,36 @@ mod tests {
         assert!(dir.join("file2.txt").exists());
         assert!(!dir.join("renamed_file1.txt").exists());
         assert!(!dir.join("renamed_file2.txt").exists());
+    }
+
+    #[test]
+    fn do_apply_works_with_invalid_rule_text() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "content").unwrap();
+        let undo_path = dir.join("undo_log.json");
+
+        let mut app = NomforgeApp {
+            state: State {
+                dir: dir.to_string_lossy().into_owned(),
+                // Invalid regex: `build_rules` would fail, but applying the
+                // already-computed plans must not consult the rules.
+                regex: "[invalid".into(),
+                history_file: undo_path.to_string_lossy().into_owned(),
+                ..Default::default()
+            },
+        };
+
+        let plans = vec![nomforge_core::RenamePlan {
+            source: dir.join("a.txt"),
+            target: dir.join("b.txt"),
+        }];
+        let files = vec![dir.join("a.txt")];
+        app.do_apply(plans, files);
+
+        assert!(dir.join("b.txt").exists());
+        assert_eq!(app.state.status, "Renamed 1 file(s)");
+        assert_eq!(nomforge_core::undo_count(&undo_path).unwrap(), 1);
     }
 
     #[test]

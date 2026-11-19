@@ -55,17 +55,12 @@ impl RenameEngine {
     ///
     /// Continues past per-plan failures; inspect `RenameResult::success`. A
     /// plan whose target already exists on disk (including one created
-    /// earlier in the same batch) fails instead of overwriting. Only setup
-    /// errors are returned as `Err`.
+    /// earlier in the same batch) fails instead of overwriting.
+    ///
+    /// Applying is plan-driven and does not consult the engine's rules; see
+    /// [`apply_plans`] for the stateless entry point.
     pub fn apply(&self, plans: &[RenamePlan]) -> Result<Vec<RenameResult>> {
-        let mut results = Vec::with_capacity(plans.len());
-
-        for plan in plans {
-            let result = self.apply_single(plan);
-            results.push(result);
-        }
-
-        Ok(results)
+        Ok(apply_plans(plans))
     }
 
     fn plan_single(&self, path: &Path, counter: usize) -> Result<RenamePlan> {
@@ -174,47 +169,57 @@ impl RenameEngine {
             target,
         })
     }
+}
 
-    fn apply_single(&self, plan: &RenamePlan) -> RenameResult {
-        if plan.source == plan.target {
-            return RenameResult {
-                source: plan.source.clone(),
-                target: plan.target.clone(),
-                success: true,
-                error: None,
-            };
-        }
+/// Apply rename plans to the filesystem without needing a configured engine.
+///
+/// Continues past per-plan failures; inspect `RenameResult::success`. A plan
+/// whose target already exists on disk (including one created earlier in the
+/// same batch) fails instead of overwriting.
+pub fn apply_plans(plans: &[RenamePlan]) -> Vec<RenameResult> {
+    plans.iter().map(apply_single).collect()
+}
 
-        // Refuse to overwrite an existing target (e.g. the duplicate of a
-        // plan that just ran in this batch). Residual TOCTOU: the target
-        // could appear between this check and rename(2). Sequential apply
-        // also does not resolve ordering dependencies between plans
-        // (A->B fails while B still exists) — chained renames need ordered
-        // application, tracked as a follow-up alongside disambiguation
-        // removal.
-        if plan.target.exists() {
-            return RenameResult {
-                source: plan.source.clone(),
-                target: plan.target.clone(),
-                success: false,
-                error: Some(NomforgeError::TargetAlreadyExists(plan.target.clone()).to_string()),
-            };
-        }
+/// Apply a single rename plan.
+fn apply_single(plan: &RenamePlan) -> RenameResult {
+    if plan.source == plan.target {
+        return RenameResult {
+            source: plan.source.clone(),
+            target: plan.target.clone(),
+            success: true,
+            error: None,
+        };
+    }
 
-        match std::fs::rename(&plan.source, &plan.target) {
-            Ok(()) => RenameResult {
-                source: plan.source.clone(),
-                target: plan.target.clone(),
-                success: true,
-                error: None,
-            },
-            Err(e) => RenameResult {
-                source: plan.source.clone(),
-                target: plan.target.clone(),
-                success: false,
-                error: Some(e.to_string()),
-            },
-        }
+    // Refuse to overwrite an existing target (e.g. the duplicate of a
+    // plan that just ran in this batch). Residual TOCTOU: the target
+    // could appear between this check and rename(2). Sequential apply
+    // also does not resolve ordering dependencies between plans
+    // (A->B fails while B still exists) — chained renames need ordered
+    // application, tracked as a follow-up alongside disambiguation
+    // removal.
+    if plan.target.exists() {
+        return RenameResult {
+            source: plan.source.clone(),
+            target: plan.target.clone(),
+            success: false,
+            error: Some(NomforgeError::TargetAlreadyExists(plan.target.clone()).to_string()),
+        };
+    }
+
+    match std::fs::rename(&plan.source, &plan.target) {
+        Ok(()) => RenameResult {
+            source: plan.source.clone(),
+            target: plan.target.clone(),
+            success: true,
+            error: None,
+        },
+        Err(e) => RenameResult {
+            source: plan.source.clone(),
+            target: plan.target.clone(),
+            success: false,
+            error: Some(e.to_string()),
+        },
     }
 }
 
@@ -415,6 +420,26 @@ mod tests {
 
         assert!(results[0].success);
         assert!(tmp.join("renamed_file1.txt").exists());
+        assert!(!tmp.join("file1.txt").exists());
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
+    fn apply_plans_applies_without_engine() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_apply_plans");
+        setup_test_dir(&tmp);
+        fs::write(tmp.join("file1.txt"), "content").unwrap();
+
+        let plans = vec![RenamePlan {
+            source: tmp.join("file1.txt"),
+            target: tmp.join("directly_renamed.txt"),
+        }];
+        let results = apply_plans(&plans);
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].success);
+        assert!(tmp.join("directly_renamed.txt").exists());
         assert!(!tmp.join("file1.txt").exists());
 
         cleanup_test_dir(&tmp);

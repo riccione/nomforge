@@ -8,7 +8,7 @@ pub mod undo;
 
 pub use conflict::{Conflict, ConflictReason, detect_conflicts};
 pub use display::{disambiguate, truncate_stem};
-pub use engine::{RenameEngine, RenamePlan, RenameResult};
+pub use engine::{RenameEngine, RenamePlan, RenameResult, apply_plans};
 pub use error::{NomforgeError, Result};
 pub use rules::{Case, FileMetadata, RenameContext, RenameRule, SeqPosition};
 pub use scanner::{ScanOptions, scan_files};
