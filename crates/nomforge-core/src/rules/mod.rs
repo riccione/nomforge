@@ -45,6 +45,14 @@ pub struct RegexCache {
     cache: HashMap<String, OnceLock<Regex>>,
 }
 
+/// Compile `pattern`, mapping regex errors to [`NomforgeError::InvalidRegex`].
+fn compile_regex(pattern: &str) -> Result<Regex> {
+    Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
+        pattern: pattern.to_string(),
+        reason: e.to_string(),
+    })
+}
+
 impl RegexCache {
     /// Create a new empty cache.
     pub fn new() -> Self {
@@ -70,19 +78,14 @@ impl RegexCache {
             if let Some(re) = lock.get() {
                 return Ok(re.clone());
             }
-            // Compile and store the regex
-            let re = Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
-                pattern: pattern.to_string(),
-                reason: e.to_string(),
-            })?;
-            let _ = lock.set(re);
-            return Ok(lock.get().unwrap().clone());
+            // Not compiled yet: compile once, then store race-safely. If
+            // another thread won the race, `get_or_init` returns their
+            // instance and ours is dropped.
+            let compiled = compile_regex(pattern)?;
+            return Ok(lock.get_or_init(|| compiled).clone());
         }
         // Pattern not in cache, compile directly (for ad-hoc usage)
-        Regex::new(pattern).map_err(|e| NomforgeError::InvalidRegex {
-            pattern: pattern.to_string(),
-            reason: e.to_string(),
-        })
+        compile_regex(pattern)
     }
 }
 
@@ -168,5 +171,64 @@ impl RenameRule {
                 Ok(re.replace_all(&ctx.stem, replacement).into_owned())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn regex_rule(pattern: &str) -> RenameRule {
+        RenameRule::RegexReplace {
+            pattern: pattern.to_string(),
+            replacement: String::new(),
+        }
+    }
+
+    #[test]
+    fn get_regex_caches_compiled_pattern() {
+        let cache = RegexCache::from_rules(&[regex_rule(r"\d+")]);
+
+        let first = cache.get_regex(r"\d+").unwrap();
+        let second = cache.get_regex(r"\d+").unwrap();
+
+        assert_eq!(first.as_str(), r"\d+");
+        assert_eq!(second.as_str(), r"\d+");
+        // The OnceLock for the pre-registered pattern is now initialized.
+        assert!(cache.cache[r"\d+"].get().is_some());
+    }
+
+    #[test]
+    fn get_regex_invalid_pattern_in_cache_errors() {
+        let cache = RegexCache::from_rules(&[regex_rule("(")]);
+
+        let err = cache.get_regex("(").unwrap_err();
+        assert!(err.to_string().contains("Invalid regex"), "err: {err}");
+
+        // Failed compilations are not cached: the lock stays empty.
+        assert!(cache.cache["("].get().is_none());
+        assert!(cache.get_regex("(").is_err());
+    }
+
+    #[test]
+    fn get_regex_uncached_pattern_compiles() {
+        let cache = RegexCache::new();
+
+        let re = cache.get_regex(r"\w+").unwrap();
+        assert_eq!(re.as_str(), r"\w+");
+    }
+
+    #[test]
+    fn get_regex_concurrent_first_use() {
+        let cache = RegexCache::from_rules(&[regex_rule(r"\d+")]);
+
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                s.spawn(|| {
+                    let re = cache.get_regex(r"\d+").unwrap();
+                    assert_eq!(re.as_str(), r"\d+");
+                });
+            }
+        });
     }
 }
