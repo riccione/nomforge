@@ -9,6 +9,13 @@ pub struct NomforgeApp {
 }
 
 impl eframe::App for NomforgeApp {
+    /// The root UI has no background of its own, so the window clear color is
+    /// what shows through. Derive it from the active theme's window fill so
+    /// switching between light and dark restyles the whole background.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.window_fill().to_normalized_gamma_f32()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.horizontal(|ui| {
             ui.heading(format!("nomforge v{}", { env!("CARGO_PKG_VERSION") }));
@@ -388,6 +395,29 @@ mod tests {
         let app = NomforgeApp::default();
         assert!(app.state.dir.is_empty());
         assert_eq!(app.state.status, "Ready");
+    }
+
+    #[test]
+    fn clear_color_follows_theme() {
+        let app = NomforgeApp::default();
+
+        let light = eframe::App::clear_color(&app, &egui::Visuals::light());
+        let dark = eframe::App::clear_color(&app, &egui::Visuals::dark());
+
+        assert_eq!(
+            light,
+            egui::Visuals::light()
+                .window_fill()
+                .to_normalized_gamma_f32()
+        );
+        assert_eq!(
+            dark,
+            egui::Visuals::dark()
+                .window_fill()
+                .to_normalized_gamma_f32()
+        );
+        // Light theme must actually produce a brighter background.
+        assert!(light[0] > dark[0], "light={light:?} dark={dark:?}");
     }
 
     #[test]
