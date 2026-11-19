@@ -9,8 +9,26 @@ pub struct NomforgeApp {
 }
 
 impl eframe::App for NomforgeApp {
+    /// The root UI has no background of its own, so the window clear color is
+    /// what shows through. Derive it from the active theme's window fill so
+    /// switching between light and dark restyles the whole background.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.window_fill().to_normalized_gamma_f32()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        ui.heading(format!("nomforge v{}", { env!("CARGO_PKG_VERSION") }));
+        ui.horizontal(|ui| {
+            ui.heading(format!("nomforge v{}", { env!("CARGO_PKG_VERSION") }));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .button(egui_material_icons::icons::ICON_SETTINGS)
+                    .on_hover_text("Settings")
+                    .clicked()
+                {
+                    self.state.open_settings();
+                }
+            });
+        });
         ui.separator();
 
         // Directory picker
@@ -77,6 +95,9 @@ impl eframe::App for NomforgeApp {
             }
         }
 
+        // Settings modal
+        crate::panels::settings::show(ui, &mut self.state);
+
         // Conflict confirmation modal
         self.show_conflict_modal(ui);
 
@@ -104,6 +125,11 @@ impl eframe::App for NomforgeApp {
 }
 
 impl NomforgeApp {
+    /// Create the app with the given state (settings already loaded).
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+
     fn scan_files(&mut self) {
         self.state.reset_output();
 
@@ -373,6 +399,44 @@ mod tests {
         let app = NomforgeApp::default();
         assert!(app.state.dir.is_empty());
         assert_eq!(app.state.status, "Ready");
+    }
+
+    #[test]
+    fn clear_color_follows_theme() {
+        let app = NomforgeApp::default();
+
+        let light = eframe::App::clear_color(&app, &egui::Visuals::light());
+        let dark = eframe::App::clear_color(&app, &egui::Visuals::dark());
+
+        assert_eq!(
+            light,
+            egui::Visuals::light()
+                .window_fill()
+                .to_normalized_gamma_f32()
+        );
+        assert_eq!(
+            dark,
+            egui::Visuals::dark()
+                .window_fill()
+                .to_normalized_gamma_f32()
+        );
+        // Light theme must actually produce a brighter background.
+        assert!(light[0] > dark[0], "light={light:?} dark={dark:?}");
+    }
+
+    #[test]
+    fn material_icon_renders() {
+        let ctx = egui::Context::default();
+        egui_material_icons::initialize(&ctx);
+
+        let mut icon_rect = None;
+        ctx.run_ui(Default::default(), |ui| {
+            icon_rect = Some(ui.button(egui_material_icons::icons::ICON_SETTINGS).rect);
+        })
+        .drop_without_applying_deltas();
+
+        let rect = icon_rect.expect("settings icon button was not laid out");
+        assert!(rect.width() > 0.0, "rect: {rect:?}");
     }
 
     #[test]
