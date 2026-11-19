@@ -415,7 +415,11 @@ fn cli_force_proceeds_with_conflicts() {
         undo_path.to_str().unwrap(),
     ]);
 
-    assert_eq!(exit_code, 0, "force must proceed. stderr: {stderr}");
+    assert_ne!(
+        exit_code, 0,
+        "a partially failed apply must exit non-zero. stderr: {stderr}"
+    );
+    assert!(stderr.contains("rename(s) failed"), "stderr: {stderr}");
     // img_1.jpg sorts first and wins the shared target
     assert_eq!(common::file_names(tmp.path()), vec!["img.jpg", "img_2.jpg"]);
     assert_eq!(common::read_content(&tmp.path().join("img.jpg")), "c1");
