@@ -27,7 +27,7 @@ pub struct RenameArgs {
     #[arg(long)]
     pub find: Option<String>,
 
-    /// Replacement text (pairs with --find)
+    /// Replacement text (requires --find)
     #[arg(long)]
     pub replace: Option<String>,
 
@@ -35,7 +35,7 @@ pub struct RenameArgs {
     #[arg(short, long)]
     pub regex: Option<String>,
 
-    /// Replacement string for regex (pairs with --regex, supports $1, $2, etc.)
+    /// Replacement string for regex (requires --regex, supports $1, $2, etc.)
     #[arg(long)]
     pub replacement: Option<String>,
 

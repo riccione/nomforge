@@ -96,9 +96,9 @@ nomforge-cli undo --history-file /path/to/undo.json
 |------|-------|-------------|
 | `--dir` | `-d` | Target directory to scan |
 | `--find` | | Plain text to find in filename |
-| `--replace` | | Replacement text (pairs with --find) |
+| `--replace` | | Replacement text (requires --find) |
 | `--regex` | `-r` | Regex pattern to match |
-| `--replacement` | | Replacement string for regex (supports `${1}`, `${2}`, etc.) |
+| `--replacement` | | Replacement string for regex (requires --regex; supports `${1}`, `${2}`, etc.) |
 | `--prefix` | | Add prefix to filename |
 | `--suffix` | | Add suffix to filename |
 | `--remove` | | Remove all occurrences of this text |
