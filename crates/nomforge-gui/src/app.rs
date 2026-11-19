@@ -133,17 +133,29 @@ impl NomforgeApp {
         Self { state }
     }
 
+    /// Resolve the configured directory to an absolute path.
+    ///
+    /// Plans built from absolute paths keep undo log entries valid no matter
+    /// which working directory a later undo runs from.
+    fn resolve_dir(&mut self) -> Option<std::path::PathBuf> {
+        match std::fs::canonicalize(&self.state.dir) {
+            Ok(dir) => Some(dir),
+            Err(e) => {
+                self.state.status = format!("Cannot resolve directory {}: {e}", self.state.dir);
+                None
+            }
+        }
+    }
+
     fn scan_files(&mut self) {
         self.state.reset_output();
 
-        let dir = std::path::Path::new(&self.state.dir);
-        if !dir.exists() {
-            self.state.status = format!("Directory not found: {}", self.state.dir);
+        let Some(dir) = self.resolve_dir() else {
             return;
-        }
+        };
 
         let scan_options = self.state.build_scan_options();
-        match nomforge_core::scan_files(dir, &scan_options) {
+        match nomforge_core::scan_files(&dir, &scan_options) {
             Ok(files) => {
                 self.state.status = format!("Found {} file(s)", files.len());
                 self.state.files = files;
@@ -164,11 +176,9 @@ impl NomforgeApp {
 
         self.state.reset_output();
 
-        let dir = std::path::Path::new(&self.state.dir);
-        if !dir.exists() {
-            self.state.status = format!("Directory not found: {}", self.state.dir);
+        let Some(dir) = self.resolve_dir() else {
             return;
-        }
+        };
 
         let rules = match self.state.build_rules() {
             Ok(r) => r,
@@ -183,7 +193,7 @@ impl NomforgeApp {
             cached
         } else {
             let scan_options = self.state.build_scan_options();
-            match nomforge_core::scan_files(dir, &scan_options) {
+            match nomforge_core::scan_files(&dir, &scan_options) {
                 Ok(f) => f,
                 Err(e) => {
                     self.state.status = format!("Scan error: {e}");
@@ -224,11 +234,9 @@ impl NomforgeApp {
 
         self.state.reset_output();
 
-        let dir = std::path::Path::new(&self.state.dir);
-        if !dir.exists() {
-            self.state.status = format!("Directory not found: {}", self.state.dir);
+        let Some(dir) = self.resolve_dir() else {
             return;
-        }
+        };
 
         let rules = match self.state.build_rules() {
             Ok(r) => r,
@@ -243,7 +251,7 @@ impl NomforgeApp {
             cached
         } else {
             let scan_options = self.state.build_scan_options();
-            match nomforge_core::scan_files(dir, &scan_options) {
+            match nomforge_core::scan_files(&dir, &scan_options) {
                 Ok(f) => f,
                 Err(e) => {
                     self.state.status = format!("Scan error: {e}");

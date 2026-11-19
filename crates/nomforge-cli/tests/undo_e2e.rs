@@ -269,3 +269,53 @@ fn cli_undo_missing_target_exits_nonzero() {
 
     let _ = std::fs::remove_file(&undo_path);
 }
+
+// Undo resolves logged paths against the directory they were recorded from,
+// regardless of the working directory `undo` is invoked from.
+#[test]
+fn undo_works_from_any_working_directory() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let other = tmp.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(tmp.path().join("a.txt"), "content").unwrap();
+    let history = tmp.path().join("undo.json");
+
+    // Relative --dir is the trigger for relative paths being logged.
+    let (exit_code, _, stderr) = common::run_nomforge_in(
+        tmp.path(),
+        &[
+            "rename",
+            "--dir",
+            ".",
+            "--prefix",
+            "x_",
+            "--history-file",
+            history.to_str().unwrap(),
+            "--apply",
+        ],
+    );
+    assert_eq!(exit_code, 0, "stderr: {stderr}");
+    assert!(tmp.path().join("x_a.txt").exists());
+
+    // Logged paths must be absolute, not relative to the rename CWD.
+    let log = std::fs::read_to_string(&history).unwrap();
+    assert!(
+        log.contains(tmp.path().to_str().unwrap()),
+        "log should record absolute paths: {log}"
+    );
+
+    // A same-named file in another directory must not be touched by undo.
+    std::fs::write(other.join("x_a.txt"), "decoy").unwrap();
+
+    let (exit_code, _, stderr) = common::run_nomforge_in(
+        &other,
+        &["undo", "--history-file", history.to_str().unwrap()],
+    );
+    assert_eq!(exit_code, 0, "stderr: {stderr}");
+    assert!(tmp.path().join("a.txt").exists());
+    assert!(!tmp.path().join("x_a.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(other.join("x_a.txt")).unwrap(),
+        "decoy"
+    );
+}

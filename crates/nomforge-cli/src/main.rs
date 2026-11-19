@@ -2,6 +2,7 @@ mod args;
 mod commands;
 mod output;
 
+use anyhow::Context;
 use args::Cli;
 use clap::Parser;
 use colored::Colorize;
@@ -13,11 +14,15 @@ fn main() -> anyhow::Result<()> {
         args::Commands::Rename(args) => {
             let rules = commands::rename::build_rules(args)?;
             let scan_options = commands::rename::build_scan_options(args);
-            let dir = std::path::Path::new(&args.dir);
+            // Resolve to an absolute path up front: planned paths are what get
+            // written to the undo log, and relative paths would later resolve
+            // against whatever directory `undo` happens to run from.
+            let dir = std::fs::canonicalize(&args.dir)
+                .with_context(|| format!("directory not found: {}", args.dir))?;
 
             // Scan files
-            let files = nomforge_core::scan_files(dir, &scan_options)?;
-            output::print_scan_summary(dir, files.len());
+            let files = nomforge_core::scan_files(&dir, &scan_options)?;
+            output::print_scan_summary(&dir, files.len());
 
             if files.is_empty() {
                 println!("  No files matched the given filters.");
