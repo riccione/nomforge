@@ -76,7 +76,7 @@ Scans never follow symbolic links: symlinked files and directories are ignored, 
 
 ### Undo
 
-The undo log defaults to `~/.local/share/nomforge/undo_log.json` on Linux/macOS, or `%USERPROFILE%\.local\share\nomforge\undo_log.json` on Windows. The directory is created automatically on first use.
+The undo log defaults to `~/.local/share/nomforge/undo_log.json` on Linux/macOS, or `%USERPROFILE%\.local\share\nomforge\undo_log.json` on Windows. The directory is created automatically on first use. Recorded paths are absolute, so undo works from any working directory.
 
 Writes are atomic (temp file + rename), so an interrupted write cannot truncate earlier history. An unreadable log is preserved as `undo_log.json.corrupt` (or `.corrupt.N`) and a fresh log is started.
 
