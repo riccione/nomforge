@@ -117,6 +117,8 @@ nomforge-cli undo --history-file /path/to/undo.json
 | `--history-file` | | Custom undo log file path |
 | `--verbose` | `-v` | Show detailed output |
 
+> **Exit status:** `rename --apply` exits with a non-zero status when one or more renames fail. Per-file errors are printed, and successful renames are still recorded in the undo log.
+
 > **Note on regex replacement:** Use brace syntax for capture group references to avoid ambiguity. For example, use `${2}_${1}` instead of `$2_$1`, since `$2_` would be parsed as a named group reference.
 
 ### `nomforge-cli undo`
