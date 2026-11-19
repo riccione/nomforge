@@ -24,15 +24,15 @@ pub fn truncate_stem(stem: &str, ext: &str) -> String {
         return stem.to_string();
     }
 
-    // Truncate at character boundary to avoid panicking on multi-byte UTF-8
-    let truncated_byte_idx = stem
-        .char_indices()
-        .take_while(|(byte_idx, _)| *byte_idx < available)
-        .last()
-        .map(|(byte_idx, ch)| byte_idx + ch.len_utf8())
-        .unwrap_or(0);
-    let truncated = &stem[..truncated_byte_idx];
-    format!("{truncated}..")
+    // Truncate at character boundary to avoid panicking on multi-byte UTF-8.
+    // Walk back from the byte budget so the kept prefix never ends inside a
+    // character: a char *starting* before the budget may end past it, which
+    // would make the final filename exceed MAX_FILENAME_BYTES.
+    let mut end = available;
+    while end > 0 && !stem.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}..", &stem[..end])
 }
 
 /// Disambiguate a target path by adding `_1`, `_2`, etc. if it already exists.
@@ -73,6 +73,19 @@ mod tests {
     use super::*;
     use std::fs;
 
+    /// Assert that `stem` + optional dot + `ext` fits within the OS limit.
+    fn assert_fits(stem: &str, ext: &str) {
+        let full_len = if ext.is_empty() {
+            stem.len()
+        } else {
+            stem.len() + 1 + ext.len()
+        };
+        assert!(
+            full_len <= MAX_FILENAME_BYTES,
+            "filename is {full_len} bytes (max {MAX_FILENAME_BYTES}): {stem:?}.{ext}"
+        );
+    }
+
     #[test]
     fn truncate_stem_short_name() {
         // Short names should be unchanged
@@ -82,9 +95,12 @@ mod tests {
 
     #[test]
     fn truncate_stem_at_limit() {
-        // Name at exactly 255 bytes (with extension) should be unchanged
+        // 251-byte stem with ".txt" is exactly 255 bytes; truncation keeps the
+        // 249-byte budget and appends "..", still fitting the limit.
         let stem = "a".repeat(251);
-        assert_eq!(truncate_stem(&stem, "txt").len(), 251);
+        let result = truncate_stem(&stem, "txt");
+        assert_eq!(result, format!("{}..", "a".repeat(249)));
+        assert_fits(&result, "txt");
     }
 
     #[test]
@@ -92,52 +108,83 @@ mod tests {
         // Name exceeding limit should be truncated
         let stem = "a".repeat(300);
         let result = truncate_stem(&stem, "txt");
-        assert!(result.len() < 300);
-        assert!(result.ends_with(".."));
+        assert_eq!(result, format!("{}..", "a".repeat(249)));
+        assert_fits(&result, "txt");
     }
 
     #[test]
     fn truncate_stem_no_extension() {
-        // No extension means more room for stem
+        // No extension means more room for stem: 253 + ".." = 255 bytes
         let stem = "a".repeat(300);
         let result = truncate_stem(&stem, "");
-        assert!(result.len() < 300);
+        assert_eq!(result.len(), 255);
         assert!(result.ends_with(".."));
+        assert_fits(&result, "");
     }
 
     #[test]
     fn truncate_stem_long_extension() {
-        // Long extension reduces available stem space
+        // Long extension reduces available stem space: 255 - 50 - 1 - 2 = 202
         let stem = "a".repeat(300);
         let ext = "x".repeat(50);
         let result = truncate_stem(&stem, &ext);
-        assert!(result.len() < 300);
+        assert_eq!(result.len(), 204);
         assert!(result.ends_with(".."));
+        assert_fits(&result, &ext);
+    }
+
+    #[test]
+    fn truncate_stem_exact_budget_unchanged() {
+        // A stem of exactly `available` bytes needs no truncation
+        let stem = "a".repeat(249);
+        let result = truncate_stem(&stem, "txt");
+        assert_eq!(result, stem);
+        assert_fits(&result, "txt");
     }
 
     #[test]
     fn truncate_stem_multibyte_utf8() {
-        // Multi-byte characters (CJK, emoji) must not be split mid-character
-        // Each Chinese character is 3 bytes in UTF-8
+        // CJK characters are 3 bytes; the 249-byte budget is a char boundary,
+        // so the name stays at 251 bytes (255 with the extension).
         let stem = "中".repeat(100); // 300 bytes
         let result = truncate_stem(&stem, "txt");
-        // Result should be valid UTF-8 and end with ".."
+        assert_eq!(result.len(), 251);
         assert!(result.ends_with(".."));
-        // Verify no panics by converting to string (already is, but validates)
-        let _ = result.as_str();
-        // Verify all characters before ".." are complete
-        let prefix = &result[..result.len() - 2];
-        assert!(std::str::from_utf8(prefix.as_bytes()).is_ok());
+        assert_fits(&result, "txt");
     }
 
     #[test]
     fn truncate_stem_emoji() {
-        // Emoji are 4 bytes each in UTF-8
+        // Emoji are 4 bytes; the 249-byte budget lands inside the char at 248,
+        // so the prefix is 248 bytes (62 emoji) and the name is 254 bytes.
         let stem = "😀".repeat(80); // 320 bytes
         let result = truncate_stem(&stem, "txt");
+        assert_eq!(result.len(), 250);
         assert!(result.ends_with(".."));
-        let prefix = &result[..result.len() - 2];
-        assert!(std::str::from_utf8(prefix.as_bytes()).is_ok());
+        assert_fits(&result, "txt");
+    }
+
+    #[test]
+    fn truncate_stem_emoji_crossing_budget() {
+        // Regression: a 4-byte emoji starting one byte before the budget used
+        // to be kept whole, producing a 258-byte filename.
+        let ext = "txt";
+        let available = MAX_FILENAME_BYTES - ext.len() - 1 - 2; // 249
+        let stem = format!("{}😀{}", "a".repeat(available - 1), "b".repeat(20));
+        let result = truncate_stem(&stem, ext);
+        assert_eq!(result, format!("{}..", "a".repeat(available - 1)));
+        assert_fits(&result, ext);
+    }
+
+    #[test]
+    fn truncate_stem_cjk_crossing_budget() {
+        // Same regression with a 3-byte character: old code produced 257 bytes.
+        let ext = "txt";
+        let available = MAX_FILENAME_BYTES - ext.len() - 1 - 2; // 249
+        let stem = format!("{}中{}", "a".repeat(available - 1), "b".repeat(20));
+        let result = truncate_stem(&stem, ext);
+        assert_eq!(result, format!("{}..", "a".repeat(available - 1)));
+        assert_fits(&result, ext);
     }
 
     #[test]

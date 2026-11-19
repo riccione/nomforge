@@ -446,6 +446,31 @@ mod tests {
     }
 
     #[test]
+    fn plan_truncates_filename_with_multibyte_boundary() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_long_name_emoji");
+        setup_test_dir(&tmp);
+
+        // A 4-byte emoji sits right where the byte budget runs out once the
+        // prefix is applied.
+        let source = tmp.join("😀.txt");
+        fs::write(&source, "content").unwrap();
+
+        let engine = RenameEngine::new(vec![RenameRule::Prefix("a".repeat(248))]);
+        let plans = engine.plan(&[source]).unwrap();
+
+        assert_eq!(plans.len(), 1);
+        let target_name = plans[0].target.file_name().unwrap().to_str().unwrap();
+        assert!(
+            target_name.len() <= 255,
+            "target is {} bytes: {target_name:?}",
+            target_name.len()
+        );
+        assert!(target_name.ends_with("..txt"));
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
     fn plan_prefix_with_extension_change() {
         let tmp = PathBuf::from("/tmp/nomforge_test_plan_prefix_ext");
         setup_test_dir(&tmp);
