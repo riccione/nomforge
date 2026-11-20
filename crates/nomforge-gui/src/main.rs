@@ -1,4 +1,5 @@
 mod app;
+mod job;
 mod panels;
 mod settings;
 mod state;
