@@ -167,13 +167,6 @@ impl NomforgeApp {
     }
 
     fn preview(&mut self) {
-        // Save cached files before reset
-        let cached_files = if !self.state.files.is_empty() {
-            Some(self.state.files.clone())
-        } else {
-            None
-        };
-
         self.state.reset_output();
 
         let Some(dir) = self.resolve_dir() else {
@@ -188,17 +181,14 @@ impl NomforgeApp {
             }
         };
 
-        // Reuse cached files if available, otherwise scan
-        let files = if let Some(cached) = cached_files {
-            cached
-        } else {
-            let scan_options = self.state.build_scan_options();
-            match nomforge_core::scan_files(&dir, &scan_options) {
-                Ok(f) => f,
-                Err(e) => {
-                    self.state.status = format!("Scan error: {e}");
-                    return;
-                }
+        // Always rescan: filters and scan options may have changed since the
+        // last scan, so reusing a cached file list could act on excluded files.
+        let scan_options = self.state.build_scan_options();
+        let files = match nomforge_core::scan_files(&dir, &scan_options) {
+            Ok(f) => f,
+            Err(e) => {
+                self.state.status = format!("Scan error: {e}");
+                return;
             }
         };
 
@@ -225,13 +215,6 @@ impl NomforgeApp {
     }
 
     fn apply(&mut self) {
-        // Save cached files before reset
-        let cached_files = if !self.state.files.is_empty() {
-            Some(self.state.files.clone())
-        } else {
-            None
-        };
-
         self.state.reset_output();
 
         let Some(dir) = self.resolve_dir() else {
@@ -246,17 +229,14 @@ impl NomforgeApp {
             }
         };
 
-        // Reuse cached files if available, otherwise scan
-        let files = if let Some(cached) = cached_files {
-            cached
-        } else {
-            let scan_options = self.state.build_scan_options();
-            match nomforge_core::scan_files(&dir, &scan_options) {
-                Ok(f) => f,
-                Err(e) => {
-                    self.state.status = format!("Scan error: {e}");
-                    return;
-                }
+        // Always rescan: filters and scan options may have changed since the
+        // last scan, so reusing a cached file list could act on excluded files.
+        let scan_options = self.state.build_scan_options();
+        let files = match nomforge_core::scan_files(&dir, &scan_options) {
+            Ok(f) => f,
+            Err(e) => {
+                self.state.status = format!("Scan error: {e}");
+                return;
             }
         };
 
@@ -283,13 +263,12 @@ impl NomforgeApp {
                 "{} conflict(s) detected — review before applying",
                 self.state.pending_conflicts.len()
             );
-            // Store plans and files for later apply
+            // Store the plans for a possible "apply anyway" confirmation.
             self.state.plans = plans;
-            self.state.files = files;
             return;
         }
 
-        self.do_apply(plans, files);
+        self.do_apply(plans);
     }
 
     fn perform_undo(&mut self) {
@@ -318,7 +297,7 @@ impl NomforgeApp {
         }
     }
 
-    fn do_apply(&mut self, plans: Vec<nomforge_core::RenamePlan>, files: Vec<std::path::PathBuf>) {
+    fn do_apply(&mut self, plans: Vec<nomforge_core::RenamePlan>) {
         // Plans are already computed; applying them never consults the rules,
         // so nothing needs rebuilding here.
         let results = nomforge_core::apply_plans(&plans);
@@ -329,7 +308,6 @@ impl NomforgeApp {
             .count();
         self.state.status = format!("Renamed {renamed} file(s)");
         self.state.plans = plans;
-        self.state.files = files;
         self.state.results = results.clone();
         self.state.applied = true;
 
@@ -373,10 +351,9 @@ impl NomforgeApp {
             ui.horizontal(|ui| {
                 if ui.button("Apply Anyway").clicked() {
                     let plans = std::mem::take(&mut self.state.plans);
-                    let files = std::mem::take(&mut self.state.files);
                     self.state.show_conflict_modal = false;
                     self.state.pending_conflicts.clear();
-                    self.do_apply(plans, files);
+                    self.do_apply(plans);
                 }
                 if ui.button("Cancel").clicked() {
                     self.state.show_conflict_modal = false;
@@ -475,10 +452,8 @@ mod tests {
         let plans = engine.plan(&app.state.files).unwrap();
         assert_eq!(plans.len(), 2);
 
-        let files = app.state.files.clone();
-
         // Apply renames with undo logging
-        app.do_apply(plans, files);
+        app.do_apply(plans);
 
         // Verify renames succeeded
         assert!(dir.join("renamed_file1.txt").exists());
@@ -503,6 +478,92 @@ mod tests {
         assert!(dir.join("file2.txt").exists());
         assert!(!dir.join("renamed_file1.txt").exists());
         assert!(!dir.join("renamed_file2.txt").exists());
+    }
+
+    #[test]
+    fn preview_rescans_with_current_filters() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        fs::write(dir.join("b.jpg"), "b").unwrap();
+
+        let mut app = NomforgeApp {
+            state: State {
+                dir: dir.to_string_lossy().into_owned(),
+                prefix: "x_".into(),
+                ..Default::default()
+            },
+        };
+
+        // Cache a scan that includes both files, then tighten the filter.
+        app.scan_files();
+        assert_eq!(app.state.files.len(), 2);
+        app.state.filter_ext = "txt".into();
+
+        app.preview();
+
+        assert_eq!(app.state.plans.len(), 1);
+        assert_eq!(app.state.plans[0].source.file_name().unwrap(), "a.txt");
+    }
+
+    #[test]
+    fn apply_rescans_with_current_filters() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        fs::write(dir.join("b.jpg"), "b").unwrap();
+        let undo_path = dir.join("undo_log.json");
+
+        let mut app = NomforgeApp {
+            state: State {
+                dir: dir.to_string_lossy().into_owned(),
+                prefix: "x_".into(),
+                history_file: undo_path.to_string_lossy().into_owned(),
+                ..Default::default()
+            },
+        };
+
+        app.scan_files();
+        assert_eq!(app.state.files.len(), 2);
+        app.state.filter_ext = "txt".into();
+
+        app.apply();
+
+        assert!(dir.join("x_a.txt").exists());
+        assert!(
+            dir.join("b.jpg").exists(),
+            "excluded file must not be renamed"
+        );
+    }
+
+    #[test]
+    fn preview_after_apply_uses_renamed_files() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("files");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let undo_path = tmp.path().join("undo.json");
+
+        let mut app = NomforgeApp {
+            state: State {
+                dir: dir.to_string_lossy().into_owned(),
+                prefix: "x_".into(),
+                history_file: undo_path.to_string_lossy().into_owned(),
+                ..Default::default()
+            },
+        };
+
+        app.apply();
+        assert!(dir.join("x_a.txt").exists());
+        assert!(
+            app.state.files.is_empty(),
+            "apply must not keep pre-rename paths"
+        );
+
+        // Previewing again rescans, so plans are based on the renamed file.
+        app.preview();
+        assert_eq!(app.state.plans.len(), 1);
+        assert_eq!(app.state.plans[0].source.file_name().unwrap(), "x_a.txt");
     }
 
     #[test]
@@ -559,8 +620,7 @@ mod tests {
             source: dir.join("a.txt"),
             target: dir.join("b.txt"),
         }];
-        let files = vec![dir.join("a.txt")];
-        app.do_apply(plans, files);
+        app.do_apply(plans);
 
         assert!(dir.join("b.txt").exists());
         assert_eq!(app.state.status, "Renamed 1 file(s)");
@@ -589,9 +649,8 @@ mod tests {
         let rules = app.state.build_rules().unwrap();
         let engine = nomforge_core::RenameEngine::new(rules);
         let plans = engine.plan(&app.state.files).unwrap();
-        let files = app.state.files.clone();
 
-        app.do_apply(plans, files);
+        app.do_apply(plans);
 
         assert!(dir.join("test_file1.txt").exists());
         // Undo log should not be created when no_undo is true
