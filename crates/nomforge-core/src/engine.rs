@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::display::{disambiguate, truncate_stem};
 use crate::error::{NomforgeError, Result};
-use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
+use crate::rules::{RegexCache, RenameContext, RenameRule};
 
 /// A planned rename operation for a single file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,11 +64,9 @@ impl RenameEngine {
     }
 
     fn plan_single(&self, path: &Path, counter: usize) -> Result<RenamePlan> {
-        let filename = path
-            .file_name()
-            .ok_or_else(|| NomforgeError::FileNotFound(path.to_path_buf()))?
-            .to_string_lossy()
-            .into_owned();
+        // Ensure the path names a file (not just a directory) before planning.
+        path.file_name()
+            .ok_or_else(|| NomforgeError::FileNotFound(path.to_path_buf()))?;
 
         let stem = path
             .file_stem()
@@ -84,25 +82,10 @@ impl RenameEngine {
 
         let parent_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
 
-        let metadata = std::fs::metadata(path)
-            .map(|m| FileMetadata {
-                size: m.len(),
-                modified: m.modified().ok(),
-                created: m.created().ok(),
-            })
-            .unwrap_or(FileMetadata {
-                size: 0,
-                modified: None,
-                created: None,
-            });
-
         let mut ctx = RenameContext {
-            filename,
             stem: stem.clone(),
             extension: extension.clone(),
-            parent_dir: parent_dir.clone(),
             counter,
-            metadata,
         };
 
         // Apply rules in order, each rule sees the result of the previous one

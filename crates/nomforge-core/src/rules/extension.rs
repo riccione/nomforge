@@ -55,21 +55,13 @@ pub fn apply_extension(current_ext: &str, new_ext: Option<&str>) -> Result<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
-    use std::path::PathBuf;
+    use crate::rules::{RegexCache, RenameContext, RenameRule};
 
     fn make_ctx(ext: &str) -> RenameContext {
         RenameContext {
-            filename: format!("file.{}", ext),
             stem: "file".to_string(),
             extension: ext.to_string(),
-            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
-            metadata: FileMetadata {
-                size: 0,
-                modified: None,
-                created: None,
-            },
         }
     }
 

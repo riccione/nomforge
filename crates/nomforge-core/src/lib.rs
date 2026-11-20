@@ -10,7 +10,7 @@ pub use conflict::{Conflict, ConflictReason, detect_conflicts};
 pub use display::{disambiguate, truncate_stem};
 pub use engine::{RenameEngine, RenamePlan, RenameResult, apply_plans};
 pub use error::{NomforgeError, Result};
-pub use rules::{Case, FileMetadata, RenameContext, RenameRule, SeqPosition};
+pub use rules::{Case, RenameContext, RenameRule, SeqPosition};
 pub use scanner::{ScanOptions, scan_files};
 pub use undo::{
     UndoBatch, UndoEntry, UndoLog, default_undo_log_path, list_batches, load_undo_log, log_renames,

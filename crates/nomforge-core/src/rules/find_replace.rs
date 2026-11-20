@@ -9,21 +9,13 @@ pub fn apply_find_replace(find: &str, replace: &str, ctx: &RenameContext) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
-    use std::path::PathBuf;
+    use crate::rules::{RegexCache, RenameContext, RenameRule};
 
     fn make_ctx(stem: &str) -> RenameContext {
         RenameContext {
-            filename: format!("{}.txt", stem),
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
-            metadata: FileMetadata {
-                size: 0,
-                modified: None,
-                created: None,
-            },
         }
     }
 
@@ -76,16 +68,9 @@ mod tests {
             replace: "photo".into(),
         };
         let ctx = RenameContext {
-            filename: "DSC_001.jpg".into(),
             stem: "DSC_001".into(),
             extension: "jpg".into(),
-            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
-            metadata: FileMetadata {
-                size: 0,
-                modified: None,
-                created: None,
-            },
         };
         let cache = RegexCache::new();
         assert_eq!(rule.apply(&ctx, &cache).unwrap(), "photo_001");
