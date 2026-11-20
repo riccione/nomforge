@@ -10,6 +10,8 @@ pub fn apply_case_transform(stem: &str, case: Case) -> Result<String> {
     })
 }
 
+/// Capitalize the first alphanumeric character of each word and lowercase the
+/// rest.
 fn title_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut capitalize_next = true;
@@ -21,7 +23,7 @@ fn title_case(s: &str) -> String {
                 }
                 capitalize_next = false;
             } else {
-                result.push(c);
+                result.extend(c.to_lowercase());
             }
         } else {
             result.push(c);
@@ -149,6 +151,42 @@ mod tests {
         assert_eq!(
             apply_case_transform(&ctx.stem, Case::Title).unwrap(),
             "File 123 Test"
+        );
+    }
+
+    #[test]
+    fn title_uppercase_input() {
+        let ctx = make_ctx("HELLO world");
+        assert_eq!(
+            apply_case_transform(&ctx.stem, Case::Title).unwrap(),
+            "Hello World"
+        );
+    }
+
+    #[test]
+    fn title_all_caps() {
+        let ctx = make_ctx("DSC 0001 PHOTO");
+        assert_eq!(
+            apply_case_transform(&ctx.stem, Case::Title).unwrap(),
+            "Dsc 0001 Photo"
+        );
+    }
+
+    #[test]
+    fn title_mixed_input() {
+        let ctx = make_ctx("hELLo WoRLD");
+        assert_eq!(
+            apply_case_transform(&ctx.stem, Case::Title).unwrap(),
+            "Hello World"
+        );
+    }
+
+    #[test]
+    fn title_unicode() {
+        let ctx = make_ctx("ÉLAN café");
+        assert_eq!(
+            apply_case_transform(&ctx.stem, Case::Title).unwrap(),
+            "Élan Café"
         );
     }
 

@@ -104,7 +104,7 @@ nomforge-cli undo --history-file /path/to/undo.json
 | `--prefix` | | Add prefix to filename |
 | `--suffix` | | Add suffix to filename |
 | `--remove` | | Remove all occurrences of this text |
-| `--case` | | Transform case: upper, lower, title |
+| `--case` | | Transform case: upper, lower, title (title capitalizes words and lowercases the rest) |
 | `--counter-start` | | Counter start value (default: 1) |
 | `--counter-padding` | | Counter zero-padding width (default: 0, max: 32) |
 | `--counter-position` | | Counter position: prefix, suffix, replace (default: prefix) |
