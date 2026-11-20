@@ -21,8 +21,11 @@ fn main() -> anyhow::Result<()> {
                 .with_context(|| format!("directory not found: {}", args.dir))?;
 
             // Scan files
-            let files = nomforge_core::scan_files(&dir, &scan_options)?;
+            let (files, warnings) = nomforge_core::scan_files_with_warnings(&dir, &scan_options)?;
             output::print_scan_summary(&dir, files.len());
+            for warning in &warnings {
+                eprintln!("  {} {warning}", "warning:".yellow().bold());
+            }
 
             if files.is_empty() {
                 println!("  No files matched the given filters.");

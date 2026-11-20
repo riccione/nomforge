@@ -11,7 +11,7 @@ pub use display::{disambiguate, truncate_stem};
 pub use engine::{RenameEngine, RenamePlan, RenameResult, apply_plans};
 pub use error::{NomforgeError, Result};
 pub use rules::{Case, RenameContext, RenameRule, SeqPosition};
-pub use scanner::{ScanOptions, scan_files};
+pub use scanner::{ScanOptions, scan_files, scan_files_with_warnings};
 pub use undo::{
     UndoBatch, UndoEntry, UndoLog, default_undo_log_path, list_batches, load_undo_log, log_renames,
     revert_last, save_undo_log, undo_count,

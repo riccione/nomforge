@@ -35,6 +35,18 @@ fn is_hidden_name(name: &std::ffi::OsStr) -> bool {
 /// actually live inside `dir`. This also means symlink loops cannot abort a
 /// scan.
 pub fn scan_files(dir: &Path, options: &ScanOptions) -> Result<Vec<PathBuf>> {
+    Ok(scan_files_with_warnings(dir, options)?.0)
+}
+
+/// Scan a directory, reporting entries that could not be read.
+///
+/// Like [`scan_files`], but unreadable entries (e.g. a subdirectory without
+/// permission) are skipped and returned as warnings instead of aborting the
+/// whole scan. Only a failure on the scan root itself is an error.
+pub fn scan_files_with_warnings(
+    dir: &Path,
+    options: &ScanOptions,
+) -> Result<(Vec<PathBuf>, Vec<String>)> {
     let include_re = options
         .include_pattern
         .as_deref()
@@ -63,46 +75,58 @@ pub fn scan_files(dir: &Path, options: &ScanOptions) -> Result<Vec<PathBuf>> {
         WalkDir::new(dir).max_depth(1)
     };
 
-    let mut files: Vec<PathBuf> = walker
-        .into_iter()
+    let mut files = Vec::new();
+    let mut warnings = Vec::new();
+
+    for entry in walker.into_iter().filter_entry(|e| {
         // Prune hidden directories (so nothing inside them is visited) and
         // skip hidden files. The scan root is exempt: choosing a hidden
         // directory explicitly should still scan its contents.
-        .filter_entry(|e| {
-            options.include_hidden || e.depth() == 0 || !is_hidden_name(e.file_name())
-        })
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| NomforgeError::WalkDir(e.to_string()))?
-        .into_iter()
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy();
-            match &include_re {
-                Some(re) => re.is_match(&name),
-                None => true,
+        options.include_hidden || e.depth() == 0 || !is_hidden_name(e.file_name())
+    }) {
+        let entry = match entry {
+            Ok(entry) => entry,
+            // A root failure (missing or unreadable) makes the scan unusable.
+            Err(e) if e.depth() == 0 => return Err(NomforgeError::WalkDir(e.to_string())),
+            Err(e) => {
+                warnings.push(e.to_string());
+                continue;
             }
-        })
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy();
-            match &exclude_re {
-                Some(re) => !re.is_match(&name),
-                None => true,
-            }
-        })
-        .filter(|e| match &options.extensions {
-            Some(exts) if !exts.is_empty() => e
+        };
+
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let name = entry.file_name().to_string_lossy();
+        if let Some(re) = &include_re
+            && !re.is_match(&name)
+        {
+            continue;
+        }
+        if let Some(re) = &exclude_re
+            && re.is_match(&name)
+        {
+            continue;
+        }
+        if let Some(exts) = &options.extensions
+            && !exts.is_empty()
+        {
+            let matches = entry
                 .path()
                 .extension()
                 .and_then(|ext| ext.to_str())
-                .map(|ext| exts.iter().any(|e| e.eq_ignore_ascii_case(ext)))
-                .unwrap_or(false),
-            _ => true,
-        })
-        .map(|e| e.into_path())
-        .collect();
+                .is_some_and(|ext| exts.iter().any(|e| e.eq_ignore_ascii_case(ext)));
+            if !matches {
+                continue;
+            }
+        }
+
+        files.push(entry.into_path());
+    }
 
     files.sort();
-    Ok(files)
+    Ok((files, warnings))
 }
 
 #[cfg(test)]
@@ -486,5 +510,40 @@ mod tests {
         assert_eq!(files, vec![link_root.join("child.txt")]);
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_skips_unreadable_subdirectory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = PathBuf::from("/tmp/nomforge_test_scan_unreadable");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("locked")).unwrap();
+        fs::write(tmp.join("readable.txt"), "c").unwrap();
+        fs::write(tmp.join("locked").join("hidden.txt"), "c").unwrap();
+
+        let locked = tmp.join("locked");
+        let original = fs::metadata(&locked).unwrap().permissions();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+
+        // Running as root bypasses permission checks; such environments cannot
+        // exercise the skip path.
+        let blocked = fs::read_dir(&locked).is_err();
+
+        let options = ScanOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        let (files, warnings) = scan_files_with_warnings(&tmp, &options).unwrap();
+
+        fs::set_permissions(&locked, original).unwrap();
+        cleanup_test_dir(&tmp);
+
+        assert_eq!(files, vec![tmp.join("readable.txt")]);
+        if blocked {
+            assert_eq!(warnings.len(), 1, "warnings: {warnings:?}");
+            assert!(warnings[0].contains("locked"), "warnings: {warnings:?}");
+        }
     }
 }

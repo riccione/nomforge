@@ -2,6 +2,15 @@ use eframe::egui;
 
 use crate::state::State;
 
+/// Suffix noting entries that could not be read during a scan.
+fn skipped_suffix(count: usize) -> String {
+    if count == 0 {
+        String::new()
+    } else {
+        format!(" ({count} unreadable entries skipped)")
+    }
+}
+
 /// The nomforge GUI application.
 #[derive(Default)]
 pub struct NomforgeApp {
@@ -154,14 +163,24 @@ impl NomforgeApp {
             return;
         };
 
+        let Some((files, skipped)) = self.scan(&dir) else {
+            return;
+        };
+
+        self.state.status = format!("Found {} file(s){}", files.len(), skipped_suffix(skipped));
+        self.state.files = files;
+    }
+
+    /// Scan `dir`, returning the files and how many entries were unreadable.
+    ///
+    /// Sets the status on scan errors.
+    fn scan(&mut self, dir: &std::path::Path) -> Option<(Vec<std::path::PathBuf>, usize)> {
         let scan_options = self.state.build_scan_options();
-        match nomforge_core::scan_files(&dir, &scan_options) {
-            Ok(files) => {
-                self.state.status = format!("Found {} file(s)", files.len());
-                self.state.files = files;
-            }
+        match nomforge_core::scan_files_with_warnings(dir, &scan_options) {
+            Ok((files, warnings)) => Some((files, warnings.len())),
             Err(e) => {
                 self.state.status = format!("Scan error: {e}");
+                None
             }
         }
     }
@@ -183,13 +202,8 @@ impl NomforgeApp {
 
         // Always rescan: filters and scan options may have changed since the
         // last scan, so reusing a cached file list could act on excluded files.
-        let scan_options = self.state.build_scan_options();
-        let files = match nomforge_core::scan_files(&dir, &scan_options) {
-            Ok(f) => f,
-            Err(e) => {
-                self.state.status = format!("Scan error: {e}");
-                return;
-            }
+        let Some((files, skipped)) = self.scan(&dir) else {
+            return;
         };
 
         if files.is_empty() {
@@ -206,7 +220,11 @@ impl NomforgeApp {
             }
         };
 
-        self.state.status = format!("{} file(s) to rename", plans.len());
+        self.state.status = format!(
+            "{} file(s) to rename{}",
+            plans.len(),
+            skipped_suffix(skipped)
+        );
 
         // Detect conflicts for preview display
         let conflicts = nomforge_core::detect_conflicts(&plans);
@@ -231,13 +249,8 @@ impl NomforgeApp {
 
         // Always rescan: filters and scan options may have changed since the
         // last scan, so reusing a cached file list could act on excluded files.
-        let scan_options = self.state.build_scan_options();
-        let files = match nomforge_core::scan_files(&dir, &scan_options) {
-            Ok(f) => f,
-            Err(e) => {
-                self.state.status = format!("Scan error: {e}");
-                return;
-            }
+        let Some((files, skipped)) = self.scan(&dir) else {
+            return;
         };
 
         if files.is_empty() {
@@ -260,8 +273,9 @@ impl NomforgeApp {
             self.state.pending_conflicts = conflicts;
             self.state.show_conflict_modal = true;
             self.state.status = format!(
-                "{} conflict(s) detected — review before applying",
-                self.state.pending_conflicts.len()
+                "{} conflict(s) detected — review before applying{}",
+                self.state.pending_conflicts.len(),
+                skipped_suffix(skipped)
             );
             // Store the plans for a possible "apply anyway" confirmation.
             self.state.plans = plans;
@@ -269,6 +283,9 @@ impl NomforgeApp {
         }
 
         self.do_apply(plans);
+        if skipped > 0 {
+            self.state.status.push_str(&skipped_suffix(skipped));
+        }
     }
 
     fn perform_undo(&mut self) {

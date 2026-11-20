@@ -597,3 +597,37 @@ fn cli_replacement_without_regex_errors() {
     );
     assert_eq!(common::file_names(tmp.path()), vec!["file.txt"]);
 }
+
+// One unreadable subdirectory must not abort the whole scan
+#[cfg(unix)]
+#[test]
+fn cli_scan_warns_about_unreadable_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = common::create_test_dir(&[("a.txt", "a"), ("locked/b.txt", "b")]);
+    let locked = tmp.path().join("locked");
+    let original = std::fs::metadata(&locked).unwrap().permissions();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    // Running as root bypasses permission checks; such environments cannot
+    // exercise the warning path.
+    let blocked = std::fs::read_dir(&locked).is_err();
+
+    let (exit_code, stdout, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--recursive",
+        "--prefix",
+        "x_",
+    ]);
+
+    std::fs::set_permissions(&locked, original).unwrap();
+
+    assert_eq!(exit_code, 0, "stderr: {stderr}");
+    assert!(stdout.contains("a.txt"), "stdout: {stdout}");
+    if blocked {
+        assert!(stderr.contains("warning"), "stderr: {stderr}");
+        assert!(stderr.contains("locked"), "stderr: {stderr}");
+    }
+}

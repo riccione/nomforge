@@ -74,6 +74,8 @@ nomforge-cli rename --dir ./config --hidden --find "." --replace "_" --apply
 
 Scans never follow symbolic links: symlinked files and directories are ignored, so renames can only affect files that actually live inside the selected directory. A scan root that is itself a symlink is still traversed.
 
+Entries that cannot be read (for example a directory without permission) are skipped with a warning; the rest of the scan still runs.
+
 ### Undo
 
 The undo log defaults to `~/.local/share/nomforge/undo_log.json` on Linux/macOS, or `%USERPROFILE%\.local\share\nomforge\undo_log.json` on Windows. The directory is created automatically on first use. Recorded paths are absolute, so undo works from any working directory.
