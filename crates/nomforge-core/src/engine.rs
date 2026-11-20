@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::display::{disambiguate, truncate_stem};
 use crate::error::{NomforgeError, Result};
-use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
+use crate::rules::{RegexCache, RenameContext, RenameRule};
 
 /// A planned rename operation for a single file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,11 +64,9 @@ impl RenameEngine {
     }
 
     fn plan_single(&self, path: &Path, counter: usize) -> Result<RenamePlan> {
-        let filename = path
-            .file_name()
-            .ok_or_else(|| NomforgeError::FileNotFound(path.to_path_buf()))?
-            .to_string_lossy()
-            .into_owned();
+        // Ensure the path names a file (not just a directory) before planning.
+        path.file_name()
+            .ok_or_else(|| NomforgeError::FileNotFound(path.to_path_buf()))?;
 
         let stem = path
             .file_stem()
@@ -84,70 +82,49 @@ impl RenameEngine {
 
         let parent_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
 
-        let metadata = std::fs::metadata(path)
-            .map(|m| FileMetadata {
-                size: m.len(),
-                modified: m.modified().ok(),
-                created: m.created().ok(),
-            })
-            .unwrap_or(FileMetadata {
-                size: 0,
-                modified: None,
-                created: None,
-            });
-
         let mut ctx = RenameContext {
-            filename,
-            stem: stem.clone(),
-            extension: extension.clone(),
-            parent_dir: parent_dir.clone(),
+            stem,
+            extension,
             counter,
-            metadata,
         };
 
-        // Apply rules in order, each rule sees the result of the previous one
-        let mut current_stem = stem;
-        let mut current_ext = extension.clone();
+        // Apply rules in order, each rule sees the result of the previous one.
+        // `ctx` is mutated in place, so no per-rule stem/extension copies are
+        // needed.
         for rule in &self.rules {
-            ctx.stem = current_stem.clone();
-            ctx.extension = current_ext.clone();
-            let new_stem = rule.apply(&ctx, &self.cache)?;
-            current_stem = new_stem;
+            ctx.stem = rule.apply(&ctx, &self.cache)?;
             // Track extension changes from ChangeExtension rules
-            if let RenameRule::ChangeExtension { new_ext } = rule {
-                current_ext = match new_ext {
-                    None => current_ext,
-                    Some(ext) if ext.is_empty() => String::new(),
-                    Some(ext) => ext.clone(),
-                };
+            if let RenameRule::ChangeExtension { new_ext: Some(ext) } = rule {
+                ctx.extension = ext.clone();
             }
         }
         // Rule output becomes a path component: reject empty/dot stems and
         // path separators (mirrors validate_extension's threat model).
-        if current_stem.is_empty()
-            || current_stem == "."
-            || current_stem == ".."
-            || current_stem.contains(['/', '\\', '\0'])
+        if ctx.stem.is_empty()
+            || ctx.stem == "."
+            || ctx.stem == ".."
+            || ctx.stem.contains(['/', '\\', '\0'])
         {
             return Err(NomforgeError::Conflict(format!(
-                "rules produced invalid name: {current_stem:?}"
+                "rules produced invalid name: {:?}",
+                ctx.stem
             )));
         }
-        let target = if current_ext.is_empty() {
-            parent_dir.join(&current_stem)
+        let target = if ctx.extension.is_empty() {
+            parent_dir.join(&ctx.stem)
         } else {
-            parent_dir.join(format!("{}.{}", current_stem, current_ext))
+            parent_dir.join(format!("{}.{}", ctx.stem, ctx.extension))
         };
 
         // Truncate filename if it exceeds OS limits
         let target = if let Some(filename_os) = target.file_name() {
             let filename_bytes = filename_os.len();
             if filename_bytes > 255 {
-                let truncated_stem = truncate_stem(&current_stem, &current_ext);
-                if current_ext.is_empty() {
+                let truncated_stem = truncate_stem(&ctx.stem, &ctx.extension);
+                if ctx.extension.is_empty() {
                     parent_dir.join(&truncated_stem)
                 } else {
-                    parent_dir.join(format!("{}.{}", truncated_stem, current_ext))
+                    parent_dir.join(format!("{}.{}", truncated_stem, ctx.extension))
                 }
             } else {
                 target

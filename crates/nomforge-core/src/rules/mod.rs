@@ -7,7 +7,6 @@ mod regex_replace;
 mod remove_text;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -15,29 +14,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{NomforgeError, Result};
 
-/// Metadata about a file being renamed.
-#[derive(Debug, Clone)]
-pub struct FileMetadata {
-    pub size: u64,
-    pub modified: Option<std::time::SystemTime>,
-    pub created: Option<std::time::SystemTime>,
-}
-
 /// Context passed to each rename rule during transformation.
 #[derive(Debug, Clone)]
 pub struct RenameContext {
-    /// Full original filename (e.g. "photo_001.jpg")
-    pub filename: String,
     /// Filename without extension (e.g. "photo_001")
     pub stem: String,
     /// Extension without dot (e.g. "jpg")
     pub extension: String,
-    /// Parent directory path
-    pub parent_dir: PathBuf,
     /// 0-based index of this file in the batch
     pub counter: usize,
-    /// File metadata
-    pub metadata: FileMetadata,
 }
 
 /// Wrapper for pre-compiled regex cache.

@@ -9,21 +9,13 @@ pub fn apply_remove_text(text: &str, ctx: &RenameContext) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{FileMetadata, RegexCache, RenameContext, RenameRule};
-    use std::path::PathBuf;
+    use crate::rules::{RegexCache, RenameContext, RenameRule};
 
     fn make_ctx(stem: &str) -> RenameContext {
         RenameContext {
-            filename: format!("{}.txt", stem),
             stem: stem.to_string(),
             extension: "txt".to_string(),
-            parent_dir: PathBuf::from("/tmp"),
             counter: 0,
-            metadata: FileMetadata {
-                size: 0,
-                modified: None,
-                created: None,
-            },
         }
     }
 
