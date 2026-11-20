@@ -6,6 +6,7 @@ use crate::error::{NomforgeError, Result};
 /// - Path separators (`/` or `\`)
 /// - Parent directory reference (`..`)
 /// - Null bytes
+/// - A leading dot (extensions are stored without it)
 fn validate_extension(ext: &str) -> Result<()> {
     if ext.contains('/') || ext.contains('\\') {
         return Err(NomforgeError::InvalidExtension {
@@ -23,6 +24,12 @@ fn validate_extension(ext: &str) -> Result<()> {
         return Err(NomforgeError::InvalidExtension {
             ext: ext.to_string(),
             reason: "contains null byte".to_string(),
+        });
+    }
+    if ext.starts_with('.') {
+        return Err(NomforgeError::InvalidExtension {
+            ext: ext.to_string(),
+            reason: "starts with a dot (omit the leading '.')".to_string(),
         });
     }
     Ok(())
@@ -157,6 +164,30 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("null byte"));
+    }
+
+    #[test]
+    fn reject_leading_dot() {
+        let result = apply_extension("txt", Some(".md"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("starts with a dot"), "err: {err}");
+    }
+
+    #[test]
+    fn reject_lone_dot() {
+        let result = apply_extension("txt", Some("."));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("starts with a dot"), "err: {err}");
+    }
+
+    #[test]
+    fn reject_dot_prefixed_garbage() {
+        let result = apply_extension("txt", Some("..md"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("starts with a dot"), "err: {err}");
     }
 
     #[test]
