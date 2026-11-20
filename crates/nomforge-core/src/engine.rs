@@ -327,6 +327,21 @@ mod tests {
     }
 
     #[test]
+    fn plan_extension_with_leading_dot_errors() {
+        let tmp = PathBuf::from("/tmp/nomforge_test_plan_ext_dot");
+        setup_test_dir(&tmp);
+
+        let engine = RenameEngine::new(vec![RenameRule::ChangeExtension {
+            new_ext: Some(".md".into()),
+        }]);
+        let files = vec![tmp.join("file1.txt")];
+        let err = engine.plan(&files).unwrap_err();
+        assert!(err.to_string().contains("starts with a dot"), "err: {err}");
+
+        cleanup_test_dir(&tmp);
+    }
+
+    #[test]
     fn plan_with_extension_removal() {
         let tmp = PathBuf::from("/tmp/nomforge_test_plan_ext_rm");
         setup_test_dir(&tmp);
