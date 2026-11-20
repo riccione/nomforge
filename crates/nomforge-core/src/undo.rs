@@ -70,7 +70,7 @@ pub fn load_undo_log(path: &Path) -> Result<UndoLog> {
     let data = match fs::read(path) {
         Ok(data) => data,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(UndoLog::new()),
-        Err(e) => return Err(NomforgeError::UndoLog(e.to_string())),
+        Err(e) => return Err(e.into()),
     };
 
     match serde_json::from_slice(&data) {
@@ -89,11 +89,10 @@ pub fn load_undo_log(path: &Path) -> Result<UndoLog> {
 /// previous version stays intact until the new one is complete.
 pub fn save_undo_log(path: &Path, log: &UndoLog) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| NomforgeError::UndoLog(e.to_string()))?;
+        fs::create_dir_all(parent)?;
     }
 
-    let data =
-        serde_json::to_string_pretty(log).map_err(|e| NomforgeError::UndoLog(e.to_string()))?;
+    let data = serde_json::to_string_pretty(log)?;
 
     let tmp_path = temp_write_path(path);
     let write_result = (|| -> std::io::Result<()> {
@@ -105,7 +104,7 @@ pub fn save_undo_log(path: &Path, log: &UndoLog) -> Result<()> {
 
     if let Err(e) = write_result {
         let _ = fs::remove_file(&tmp_path);
-        return Err(NomforgeError::UndoLog(e.to_string()));
+        return Err(e.into());
     }
     Ok(())
 }
@@ -144,12 +143,7 @@ fn corrupt_backup_path(path: &Path) -> PathBuf {
 /// Move a damaged log aside so its history can still be recovered manually.
 fn preserve_corrupt_log(path: &Path) -> Result<()> {
     let backup = corrupt_backup_path(path);
-    fs::rename(path, &backup).map_err(|e| {
-        NomforgeError::UndoLog(format!(
-            "failed to preserve corrupt undo log as {}: {e}",
-            backup.display()
-        ))
-    })
+    fs::rename(path, &backup).map_err(|source| NomforgeError::UndoLogBackup { backup, source })
 }
 
 /// Log a batch of successful rename operations.
@@ -679,6 +673,22 @@ mod tests {
 
         let _ = fs::remove_dir_all(&tmp_path);
         cleanup(&path);
+    }
+
+    #[test]
+    fn save_undo_log_io_error_keeps_source_chain() {
+        let tmp = PathBuf::from("/tmp/nomforge_undo_save_io");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        // A regular file where the log's parent directory should be.
+        fs::write(tmp.join("not_a_dir"), "x").unwrap();
+        let path = tmp.join("not_a_dir").join("undo.json");
+
+        let err = save_undo_log(&path, &UndoLog::new()).unwrap_err();
+
+        assert!(matches!(err, NomforgeError::Io(_)), "err: {err}");
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]

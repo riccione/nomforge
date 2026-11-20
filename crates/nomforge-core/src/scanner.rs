@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use walkdir::WalkDir;
 
-use crate::error::{NomforgeError, Result};
+use crate::error::Result;
 
 /// Options for scanning files in a directory.
 #[derive(Debug, Clone, Default)]
@@ -87,7 +87,7 @@ pub fn scan_files_with_warnings(
         let entry = match entry {
             Ok(entry) => entry,
             // A root failure (missing or unreadable) makes the scan unusable.
-            Err(e) if e.depth() == 0 => return Err(NomforgeError::WalkDir(e.to_string())),
+            Err(e) if e.depth() == 0 => return Err(e.into()),
             Err(e) => {
                 warnings.push(e.to_string());
                 continue;
@@ -132,6 +132,7 @@ pub fn scan_files_with_warnings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::NomforgeError;
     use std::fs;
 
     fn setup_test_dir(dir: &Path) {
@@ -324,9 +325,14 @@ mod tests {
 
     #[test]
     fn scan_nonexistent_directory() {
+        use std::error::Error;
+
         let tmp = PathBuf::from("/tmp/nomforge_test_scan_nonexistent_12345");
-        let result = scan_files(&tmp, &Default::default());
-        assert!(result.is_err());
+        let err = scan_files(&tmp, &Default::default()).unwrap_err();
+
+        // The walkdir error is carried as a source instead of being flattened.
+        assert!(matches!(err, NomforgeError::WalkDir(_)), "err: {err}");
+        assert!(err.source().is_some(), "missing source chain: {err}");
     }
 
     #[test]
