@@ -49,6 +49,9 @@ pub struct State {
     pub draft_font_size_input: String,
     pub show_settings_modal: bool,
 
+    /// Currently running background job, if any.
+    pub job: Option<crate::job::Job>,
+
     /// Conflict detection.
     pub show_conflict_modal: bool,
     pub pending_conflicts: Vec<Conflict>,
@@ -103,6 +106,7 @@ impl Default for State {
             draft_font_size: crate::settings::DEFAULT_FONT_SIZE,
             draft_font_size_input: format!("{:.0}", crate::settings::DEFAULT_FONT_SIZE),
             show_settings_modal: false,
+            job: None,
             show_conflict_modal: false,
             pending_conflicts: Vec::new(),
             verbose: false,

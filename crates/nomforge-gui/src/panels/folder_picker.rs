@@ -3,6 +3,9 @@ use eframe::egui;
 use crate::state::State;
 
 /// Render the folder picker panel.
+///
+/// `rfd::FileDialog` is a native modal dialog and blocks by design; rfd
+/// recommends running dialogs on the main thread, so this stays synchronous.
 pub fn show(ui: &mut egui::Ui, state: &mut State) {
     ui.horizontal(|ui| {
         ui.label("Directory:");
