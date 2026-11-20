@@ -229,6 +229,8 @@ impl State {
         self.files.clear();
         self.plans.clear();
         self.results.clear();
+        self.pending_conflicts.clear();
+        self.show_conflict_modal = false;
         self.applied = false;
         self.status = "Ready".into();
     }
@@ -428,6 +430,12 @@ mod tests {
                 target: PathBuf::from("/tmp/test.md"),
             }],
             results: vec![],
+            pending_conflicts: vec![Conflict {
+                plan_a: 0,
+                plan_b: 1,
+                reason: nomforge_core::ConflictReason::SameTarget(PathBuf::from("/tmp/test.md")),
+            }],
+            show_conflict_modal: true,
             applied: true,
             status: "Done".into(),
             ..Default::default()
@@ -436,6 +444,8 @@ mod tests {
         assert!(state.files.is_empty());
         assert!(state.plans.is_empty());
         assert!(state.results.is_empty());
+        assert!(state.pending_conflicts.is_empty());
+        assert!(!state.show_conflict_modal);
         assert!(!state.applied);
         assert_eq!(state.status, "Ready");
     }
