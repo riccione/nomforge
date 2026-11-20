@@ -25,24 +25,22 @@ pub enum NomforgeError {
     #[error("No files matched the given filters")]
     NoFilesFound,
 
-    /// The generated filename exceeds the OS limit of 255 bytes.
-    ///
-    /// On Linux (ext4, XFS, Btrfs), the limit is 255 bytes per filename component.
-    /// On macOS (APFS), it's 255 characters (NFD decomposed). On Windows (NTFS),
-    /// it's 255 UTF-16 code units. We use 255 bytes as a conservative limit that
-    /// works across platforms, since a byte-length check is the safest portable
-    /// approach.
-    #[error("Filename too long ({length} bytes, max 255): {filename}")]
-    FilenameTooLong { filename: String, length: usize },
-
+    /// A semantic undo-log failure (e.g. no history, nothing revertable).
     #[error("Undo log error: {0}")]
     UndoLog(String),
+
+    #[error("failed to preserve corrupt undo log as {}: {source}", backup.display())]
+    UndoLogBackup {
+        backup: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 
     #[error("JSON serialization error: {0}")]
     Json(#[from] serde_json::Error),
 
     #[error("Walk directory error: {0}")]
-    WalkDir(String),
+    WalkDir(#[from] walkdir::Error),
 }
 
 pub type Result<T> = std::result::Result<T, NomforgeError>;
