@@ -85,6 +85,7 @@ impl Default for RegexCache {
 pub enum Case {
     Upper,
     Lower,
+    /// Capitalize each word; remaining characters are lowercased.
     Title,
 }
 
