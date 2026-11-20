@@ -506,6 +506,38 @@ mod tests {
     }
 
     #[test]
+    fn apply_clears_stale_conflicts() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "content").unwrap();
+        let undo_path = dir.join("undo_log.json");
+
+        let mut app = NomforgeApp {
+            state: State {
+                dir: dir.to_string_lossy().into_owned(),
+                prefix: "x_".into(),
+                history_file: undo_path.to_string_lossy().into_owned(),
+                // Left over from an earlier preview that had conflicts.
+                pending_conflicts: vec![nomforge_core::Conflict {
+                    plan_a: 0,
+                    plan_b: 1,
+                    reason: nomforge_core::ConflictReason::SameTarget(dir.join("dup.txt")),
+                }],
+                show_conflict_modal: true,
+                ..Default::default()
+            },
+        };
+
+        // A clean rule set: applying it must drop the stale conflict state.
+        app.apply();
+
+        assert!(dir.join("x_a.txt").exists());
+        assert_eq!(app.state.status, "Renamed 1 file(s)");
+        assert!(app.state.pending_conflicts.is_empty());
+        assert!(!app.state.show_conflict_modal);
+    }
+
+    #[test]
     fn do_apply_works_with_invalid_rule_text() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path();
