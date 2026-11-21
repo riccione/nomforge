@@ -1,3 +1,62 @@
+## [0.5.0] - 2026-11-21
+
+### Bug Fixes
+
+- *(gui)* Replace deprecated Id::new with Id::unique
+- *(gui)* Use theme window color for background
+- *(core)* Respect byte budget when truncating stems
+- *(core)* Prune hidden directories when scanning
+- *(core)* Stop following symlinks when scanning
+- *(core)* Harden undo log persistence
+- *(cli)* Resolve scan directory to absolute path
+- *(cli)* Reject replacement flags without their matcher
+- *(cli)* Exit non-zero when renames fail
+- *(gui)* Apply plans without rebuilding rules
+- *(gui)* Clear stale conflicts when resetting output
+- *(gui)* Rescan before preview and apply
+- *(core)* Reject extensions with a leading dot
+- *(gui)* Clarify extension field omits the leading dot
+- *(core)* Skip unreadable entries when scanning
+- *(core)* Lowercase the rest of title-cased words
+
+### Documentation
+
+- *(readme)* Mention GUI settings
+- Clarify hidden filter covers directories
+- Note that scans do not follow symlinks
+- Document undo log durability
+- Note undo paths are absolute
+- Document replacement flag requirements
+- Document apply exit status
+- Note unreadable entries are skipped
+- Clarify title case semantics
+- Improve readability of README
+
+### Features
+
+- *(gui)* Add settings modal for theme and font size
+- *(gui)* Use material icon for settings button
+- *(cli,gui)* Surface scan warnings for unreadable entries
+- *(gui)* Run scans and renames off the UI thread
+
+### Miscellaneous Tasks
+
+- *(gui)* Remove unused anyhow dependency
+- Drop homepage metadata redundant with repository
+- Update SHA hash of reusable workflows
+- *(release)* Customize pre-release commit message format
+
+### Performance
+
+- *(core)* Move stem and extension between rules
+- *(gui)* Avoid double allocation in preview rows
+
+### Refactor
+
+- *(core)* Remove unwrap from regex cache initialization
+- *(core)* Expose apply_plans as a free function
+- *(core)* Drop unused rename context fields
+- *(core)* Keep error sources instead of stringifying
 ## [0.4.0] - 2026-10-06
 
 ### Bug Fixes
@@ -33,6 +92,7 @@
 - *(cli)* Drop redundant bin block
 - Adopt reusable workflows for release and pin CI workflow SHA (#77)
 - *(release)* Generate changelog separately
+- Release nomforge version 0.4.0
 
 ### Testing
 
