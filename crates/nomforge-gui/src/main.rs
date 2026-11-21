@@ -30,8 +30,6 @@ fn main() -> eframe::Result<()> {
                     font_id.size += 2.0;
                 }
             });
-            // Register the Material Symbols font used for UI icons.
-            egui_material_icons::initialize(&cc.egui_ctx);
             // Apply the persisted theme and font size before the first frame.
             cc.egui_ctx
                 .set_theme(eframe::egui::ThemePreference::from(settings.theme));
