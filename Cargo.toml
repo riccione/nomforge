@@ -33,6 +33,9 @@ publish = false
 # (e.g. release/v1.2.3), never directly on the protected `main` branch.
 allow-branch = ["release/v*"]
 
+# Release commit message
+pre-release-commit-message = "chore: Release nomforge version {{version}}"
+
 [profile.release]
 strip = true
 lto = true
