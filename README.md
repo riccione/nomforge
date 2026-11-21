@@ -1,199 +1,310 @@
+<div align="center">
+
 # nomforge
 
-A bulk file renaming tool with CLI and GUI interfaces, built in Rust.
+A cross-platform bulk file renaming tool with CLI and GUI interfaces, built in Rust.
+
+Rename files using composable rules, preview changes before applying them, and
+undo previous operations when needed.
+
+[![CI](https://github.com/riccione/nomforge/actions/workflows/ci.yml/badge.svg)](https://github.com/riccione/nomforge/actions)
+[![Release](https://img.shields.io/github/v/release/riccione/nomforge)](https://github.com/riccione/nomforge/releases)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+</div>
 
 ## Features
 
-- **8 rename rules**: find/replace, prefix/suffix, case transform, counter, remove text, change extension, regex replace
-- **Rule chaining**: combine multiple rules in a single pass
-- **Dry-run by default**: preview all changes before applying
-- **Undo support**: revert the last batch of renames via JSON log
-- **Conflict detection**: aborts `--apply` when multiple files would collide (`--force` to proceed; conflicts fail instead of overwriting)
-- **File filtering**: by extension, include/exclude regex patterns, recursive scan, hidden files and directories
-- **Smart truncation**: automatically truncates filenames exceeding OS limits (255 bytes)
-- **Auto-disambiguation**: adds `_1`, `_2`, etc. when a changed target already exists (no-op plans are never renamed)
-- **GUI settings**: light/dark/system theme and font size, applied live and remembered between runs
-
-## Architecture
-
-```
-nomforge-core    — rename rules, engine, scanner, conflict detection, undo log
-nomforge-cli     — command-line interface (clap)
-nomforge-gui     — graphical interface (eframe)
-```
+- **Multiple rename rules:** find and replace, prefix, suffix, case
+  transformation, counters, text removal, extension changes, and regex
+  replacement.
+- **Rule chaining:** combine multiple rules into a single rename operation.
+- **Dry-run by default:** preview proposed changes without modifying files.
+- **Undo support:** revert the last batch of renames using a persistent JSON
+  history log.
+- **Conflict detection:** detect filename collisions before applying changes.
+  Use `--force` to attempt non-conflicting operations; conflicting files are
+  never overwritten.
+- **Flexible filtering:** filter by extension, include/exclude regex patterns,
+  scan recursively, and optionally include hidden files and directories.
+- **Smart filename handling:** automatically truncate filenames exceeding OS
+  limits and disambiguate existing targets with `_1`, `_2`, etc.
+- **GUI preferences:** light, dark, and system themes, plus adjustable font
+  size. Settings are applied live and persisted between runs.
 
 ## Installation
 
-Requires **Rust edition 2024** (Rust 1.85+).
+Prebuilt binaries are available for Linux, macOS, and Windows on the [GitHub Releases](https://github.com/riccione/nomforge/releases) page. Both CLI and GUI versions are provided.
+
+### Download a prebuilt binary (Recommended)
+
+Choose the executable matching your operating system and architecture.
+
+| Platform | CLI | GUI |
+|---|---|---|
+| Linux (x86_64) | [Download](https://github.com/riccione/nomforge/releases/latest/download/nomforge-cli_linux-x86_64) | [Download](https://github.com/riccione/nomforge/releases/latest/download/nomforge-gui_linux-x86_64) |
+| macOS (Apple Silicon) | [Download](https://github.com/riccione/nomforge/releases/latest/download/nomforge-cli_macos-arm64) | [Download](https://github.com/riccione/nomforge/releases/latest/download/nomforge-gui_macos-arm64) |
+| macOS (Intel) | [Download](https://github.com/riccione/nomforge/releases/latest/download/nomforge-cli_macos-x86_64) | [Download](https://github.com/riccione/nomforge/releases/latest/download/nomforge-gui_macos-x86_64) |
+| Windows (x86_64) | [Download](https://github.com/riccione/nomforge/releases/latest/download/nomforge-cli_win-x86_64.exe) | [Download](https://github.com/riccione/nomforge/releases/latest/download/nomforge-gui_win-x86_64.exe) |
+
+After downloading:
+
+**Linux / macOS**
+
+Make the downloaded executable runnable:
 
 ```bash
-cargo install --path crates/nomforge-cli
+chmod +x nomforge-cli_linux-x86_64
+./nomforge-cli_linux-x86_64 --help
 ```
 
-This installs the `nomforge-cli` binary.
+For the GUI, run the downloaded `nomforge-gui` executable instead.
+
+**Windows**
+
+Run the downloaded `.exe` file. The CLI can be launched from PowerShell or Command Prompt.
+
+### Verify downloads
+
+Each release includes a `SHA256SUMS` file containing checksums for the binaries.
+
+On Linux:
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+On macOS:
+
+```bash
+shasum -a 256 -c SHA256SUMS
+```
+
+On Windows PowerShell:
+
+```powershell
+Get-FileHash .\nomforge-cli_win-x86_64.exe -Algorithm SHA256
+```
+
+Compare the resulting hash with the corresponding entry in `SHA256SUMS`.
+
+### Build from source
+
+Requires **Rust 1.85+** (Edition 2024).
+
+Clone the repository:
+
+```bash
+git clone https://github.com/riccione/nomforge.git
+cd nomforge
+```
+
+Build both applications:
+
+```bash
+cargo build --release --workspace
+```
+
+The executables are available under `target/release/`.
+
+Alternatively, run an application directly:
+
+```bash
+# CLI
+cargo run --release -p nomforge-cli -- --help
+
+# GUI
+cargo run --release -p nomforge-gui
+```
+
+### Install the CLI using Cargo
+
+You can also install the CLI directly from the repository:
+
+```bash
+cargo install --git https://github.com/riccione/nomforge.git --tag v0.4.0 --package nomforge-cli
+```
+
+This installs the `nomforge-cli` executable into your Cargo binary directory.
 
 ## Usage
 
-### Rename files
+### Basic renaming
+
+All rename operations are dry-runs by default. Add `--apply` to actually rename files.
 
 ```bash
-# Dry-run (default) — preview changes without modifying files
-nomforge-cli rename --dir ./photos --prefix "vacation_" --suffix "_2024"
+# Preview changes
+nomforge-cli rename --dir ./photos --prefix "vacation_"
 
-# Apply renames
+# Apply changes
 nomforge-cli rename --dir ./photos --prefix "vacation_" --apply
 
-# Case transform
+# Transform filenames to uppercase
 nomforge-cli rename --dir ./docs --case upper --apply
 
-# Regex replace
-nomforge-cli rename --dir ./logs --regex "(\d{4})-(\d{2})" --replacement "${2}-${1}" --apply
+# Find and replace text
+nomforge-cli rename --dir ./downloads --find "old" --replace "new" --apply
 
-# Counter
-nomforge-cli rename --dir ./exports --counter-start 1 --counter-padding 3 --counter-position suffix --apply
+# Replace text using regular expressions
+nomforge-cli rename --dir ./logs \
+  --regex '(\d{4})-(\d{2})' \
+  --replacement '${2}-${1}' \
+  --apply
 
-# Remove text
+# Add sequential counters
+nomforge-cli rename --dir ./exports \
+  --counter-start 1 \
+  --counter-padding 3 \
+  --counter-position suffix \
+  --apply
+
+# Remove text from filenames
 nomforge-cli rename --dir ./downloads --remove "copy" --apply
 ```
 
 ### File filtering
 
 ```bash
-# Only .txt files
+# Only process .txt files
 nomforge-cli rename --dir ./docs --ext txt --case upper --apply
 
-# Recursive scan
-nomforge-cli rename --dir ./project --recursive --find "old" --replace "new" --apply
+# Include subdirectories
+nomforge-cli rename --dir ./project --recursive \
+  --find "old" --replace "new" --apply
 
-# Include/exclude patterns
-nomforge-cli rename --dir ./photos --include "IMG_\d+" --exclude "backup" --prefix "photo_" --apply
+# Include and exclude files using regex patterns
+nomforge-cli rename --dir ./photos \
+  --include 'IMG_\d+' \
+  --exclude 'backup' \
+  --prefix "photo_" \
+  --apply
 
 # Include hidden files and directories
-nomforge-cli rename --dir ./config --hidden --find "." --replace "_" --apply
+nomforge-cli rename --dir ./config --hidden \
+  --find "." --replace "_" --apply
 ```
 
-Scans never follow symbolic links: symlinked files and directories are ignored, so renames can only affect files that actually live inside the selected directory. A scan root that is itself a symlink is still traversed.
+**Scanning behavior:**
 
-Entries that cannot be read (for example a directory without permission) are skipped with a warning; the rest of the scan still runs.
+- Symbolic links are not followed. Symlinked files and directories are ignored. A scan root that is itself a symlink is still traversed.
+- Entries that cannot be read (for example, directories without sufficient permissions) are skipped with a warning. The remaining scan continues.
 
 ### Undo
 
-The undo log defaults to `~/.local/share/nomforge/undo_log.json` on Linux/macOS, or `%USERPROFILE%\.local\share\nomforge\undo_log.json` on Windows. The directory is created automatically on first use. Recorded paths are absolute, so undo works from any working directory.
-
-Writes are atomic (temp file + rename), so an interrupted write cannot truncate earlier history. An unreadable log is preserved as `undo_log.json.corrupt` (or `.corrupt.N`) and a fresh log is started.
+Every successful rename batch is recorded in a persistent JSON history log unless `--no-undo` is specified.
 
 ```bash
-# Undo last batch
+# Undo the last batch
 nomforge-cli undo
 
-# Undo with custom history file
+# Use a custom history file
 nomforge-cli undo --history-file /path/to/undo.json
 ```
+
+The default history location is:
+
+| Platform | Location |
+|---|---|
+| Linux / macOS | `~/.local/share/nomforge/undo_log.json` |
+| Windows | `%USERPROFILE%\.local\share\nomforge\undo_log.json` |
+
+The history directory is created automatically when needed.
+
+Additional safeguards:
+
+- **Atomic writes:** history updates use a temporary file followed by a rename, protecting existing history from interrupted writes.
+- **Corrupt log recovery:** unreadable history files are preserved as `undo_log.json.corrupt` (or `undo_log.json.corrupt.N`) before a fresh log is created.
+- **Portable undo:** recorded paths are absolute, so undo works regardless of the current working directory.
 
 ## CLI Reference
 
 ### `nomforge-cli rename`
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--dir` | `-d` | Target directory to scan |
-| `--find` | | Plain text to find in filename |
-| `--replace` | | Replacement text (requires --find) |
-| `--regex` | `-r` | Regex pattern to match |
-| `--replacement` | | Replacement string for regex (requires --regex; supports `${1}`, `${2}`, etc.) |
-| `--prefix` | | Add prefix to filename |
-| `--suffix` | | Add suffix to filename |
-| `--remove` | | Remove all occurrences of this text |
-| `--case` | | Transform case: upper, lower, title (title capitalizes words and lowercases the rest) |
-| `--counter-start` | | Counter start value (default: 1) |
-| `--counter-padding` | | Counter zero-padding width (default: 0, max: 32) |
-| `--counter-position` | | Counter position: prefix, suffix, replace (default: prefix) |
+| Option | Short | Description |
+|---|---|---|
+| `--dir` | `-d` | Directory to scan |
+| `--find` | | Plain text to find in filenames |
+| `--replace` | | Replacement text (requires `--find`) |
+| `--regex` | `-r` | Regular expression pattern |
+| `--replacement` | | Regex replacement (requires `--regex`; supports `${1}`, `${2}`, etc.) |
+| `--prefix` | | Add a prefix |
+| `--suffix` | | Add a suffix |
+| `--remove` | | Remove all occurrences of text |
+| `--case` | | Transform case: `upper`, `lower`, or `title` |
+| `--counter-start` | | Counter starting value (default: `1`) |
+| `--counter-padding` | | Zero-padding width (default: `0`, maximum: `32`) |
+| `--counter-position` | | Counter position: `prefix`, `suffix`, or `replace` (default: `prefix`) |
 | `--ext` | `-e` | Filter by file extension (repeatable) |
-| `--include` | `-i` | Include only files matching this regex |
-| `--exclude` | | Exclude files matching this regex |
+| `--include` | `-i` | Include only filenames matching a regex |
+| `--exclude` | | Exclude filenames matching a regex |
 | `--recursive` | `-R` | Scan subdirectories recursively |
 | `--hidden` | | Include hidden files and directories |
-| `--apply` | `-a` | Actually apply renames (default is dry-run) |
-| `--force` | | Apply even when conflicts are detected; conflicting renames fail instead of overwriting |
-| `--no-undo` | | Skip logging to undo history |
-| `--history-file` | | Custom undo log file path |
+| `--apply` | `-a` | Apply changes (default: dry-run) |
+| `--force` | | Attempt renames despite detected conflicts |
+| `--no-undo` | | Skip undo history logging |
+| `--history-file` | | Custom undo history file |
 | `--verbose` | `-v` | Show detailed output |
 
-> **Exit status:** `rename --apply` exits with a non-zero status when one or more renames fail. Per-file errors are printed, and successful renames are still recorded in the undo log.
+**Exit status:** `rename --apply` returns a non-zero exit status if one or more renames fail. Successful operations are still recorded in the undo history.
 
-> **Note on regex replacement:** Use brace syntax for capture group references to avoid ambiguity. For example, use `${2}_${1}` instead of `$2_$1`, since `$2_` would be parsed as a named group reference.
+**Regex replacement:** use brace syntax for capture group references to avoid ambiguity. For example, `${2}_${1}` instead of `$2_$1`, since `$2_` may be interpreted as a named group reference.
 
 ### `nomforge-cli undo`
 
-| Flag | Description |
-|------|-------------|
-| `--history-file` | Custom undo log file path |
+| Option | Description |
+|---|---|
+| `--history-file` | Custom undo history file |
 
-## How to Contribute
-
-We welcome contributions to nomforge! Please ensure your work aligns with our formatting and workflow structures.
-
-### Branch Naming & Commit Style
-
-We enforce [Conventional Commits](https://www.conventionalcommits.org/) for both branch naming and commit messages.
-
-- **Branches**: Use semantic prefixes followed by a short description (e.g., `feat/cli-output`, `fix/regex-escape`, `docs/update-readme`).
-- **Commits**: Structure messages using a structural indicator (e.g., `feat: add counter rule`, `fix(engine): resolve conflict detection edge case`).
-
-### Pull Request Format
-
-When opening a Pull Request, include the following:
-
-- **Clear Title**: Use a structured title (e.g., `feat: add batch undo support`).
-- **Essence of Changes**: Briefly explain what was altered, why it was necessary, and how it was implemented.
-- **Traceability Links**: Link to related issues, discussions, or documentation.
-- **Visual Evidence**: Attach screenshots or recordings if the change affects UI.
-- **Self-Check Checklist**:
-  - [ ] `cargo check`
-  - [ ] `cargo fmt --all`
-  - [ ] `cargo clippy --all-targets -- -D warnings`
-  - [ ] `cargo test --workspace`
-  - [ ] Updated documentation if applicable
-
----
-
-## Release
-
-Releases are prepared on a `release/v*` branch and tagged manually from `main` after the release PR is merged.
+For the complete list of options, run:
 
 ```bash
-# Create a release branch
-git checkout -b release/v0.3.0
-
-# Bump the workspace version
-cargo release minor --execute
-
-# Generate the changelog
-git cliff -o CHANGELOG.md --tag v0.3.0
-
-# Review and commit the changes
-git status
-git diff
-git add .
-git commit -m "chore(release): prepare v0.3.0"
-
-# Push the release branch and open a PR
-git push -u origin release/v0.3.0
+nomforge-cli --help
+nomforge-cli rename --help
+nomforge-cli undo --help
 ```
 
-After the release PR is merged, create the tag from `main`:
+## Architecture
+
+nomforge is organized as a Rust workspace:
+
+```text
+nomforge/
+├── crates/
+│   ├── nomforge-core/    # Rename rules, engine, scanning, conflicts, undo
+│   ├── nomforge-cli/     # Command-line interface (clap)
+│   └── nomforge-gui/     # Graphical interface (eframe)
+```
+
+The core crate contains the renaming logic and is shared by the CLI and GUI interfaces.
+
+## Contributing
+
+Contributions, bug reports, and feature suggestions are welcome.
+
+Before submitting a pull request, make sure the project passes the following checks:
 
 ```bash
-git checkout main
-git pull
-git tag v0.3.0
-git push origin v0.3.0
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
+cargo test --workspace
 ```
 
-The GitHub release workflow is triggered by the tag.
+For pull requests:
 
----
+- Describe what changed and why.
+- Link related issues or discussions.
+- Include screenshots or recordings for GUI changes.
+- Update documentation when necessary.
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) for commit messages. Examples:
+
+```text
+feat: add batch undo support
+fix(engine): resolve conflict detection edge case
+docs: update README
+```
 
 ## License
 
-This project is licensed under the terms of the Apache License 2.0. For the full legal text detailing permissions, limitations, and liabilities, please consult the complete [LICENSE](LICENSE) file included in this repository.
+Licensed under the [Apache License 2.0](LICENSE).
