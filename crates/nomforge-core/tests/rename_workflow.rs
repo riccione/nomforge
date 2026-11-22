@@ -96,8 +96,8 @@ fn full_rename_empty_dir() {
     assert!(files.is_empty());
 
     let engine = RenameEngine::new(vec![RenameRule::Prefix("pre_".into())]);
-    let result = engine.plan(&files);
-    assert!(result.is_err());
+    let plans = engine.plan(&files).unwrap();
+    assert!(plans.is_empty());
 }
 
 // Test 6: rename with no rules keeps original names

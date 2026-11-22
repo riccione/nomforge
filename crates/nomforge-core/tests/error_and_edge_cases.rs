@@ -2,12 +2,12 @@ mod common;
 
 use nomforge_core::{RenameEngine, RenameRule, ScanOptions, scan_files};
 
-// Test 1: plan with empty files list returns error
+// Test 1: an empty file list yields an empty plan
 #[test]
-fn error_no_files_returns_error() {
+fn empty_file_list_returns_empty_plan() {
     let engine = RenameEngine::new(vec![RenameRule::Prefix("pre_".into())]);
-    let result = engine.plan(&[]);
-    assert!(result.is_err());
+    let plans = engine.plan(&[]).unwrap();
+    assert!(plans.is_empty());
 }
 
 // Test 2: filename too long is truncated (not error)
