@@ -98,8 +98,10 @@ pub enum SeqPosition {
 }
 
 /// A single rename rule applied to a file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+///
+/// Serialized as `{"type": "<Variant>", "value": <payload>}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
 pub enum RenameRule {
     /// Plain text find & replace (no regex).
     FindReplace { find: String, replace: String },
@@ -216,5 +218,49 @@ mod tests {
                 });
             }
         });
+    }
+
+    // --- Serde round-trip ---
+
+    #[test]
+    fn rule_serde_roundtrip_all_variants() {
+        let rules = vec![
+            RenameRule::FindReplace {
+                find: "old".into(),
+                replace: "new".into(),
+            },
+            RenameRule::Prefix("pre_".into()),
+            RenameRule::Suffix("_suf".into()),
+            RenameRule::RemoveText("copy".into()),
+            RenameRule::CaseTransform(Case::Title),
+            RenameRule::NumberSequence {
+                start: 5,
+                padding: 3,
+                position: SeqPosition::Suffix,
+            },
+            RenameRule::ChangeExtension {
+                new_ext: Some("png".into()),
+            },
+            RenameRule::ChangeExtension { new_ext: None },
+            RenameRule::RegexReplace {
+                pattern: r"\d+".into(),
+                replacement: "n".into(),
+            },
+        ];
+
+        for rule in &rules {
+            let json =
+                serde_json::to_string(rule).unwrap_or_else(|e| panic!("serialize {rule:?}: {e}"));
+            let back: RenameRule =
+                serde_json::from_str(&json).unwrap_or_else(|e| panic!("deserialize {json}: {e}"));
+            assert_eq!(&back, rule, "json: {json}");
+        }
+    }
+
+    #[test]
+    fn rule_serde_uses_adjacent_tagging() {
+        let json = serde_json::to_string(&RenameRule::Prefix("pre_".into())).unwrap();
+        assert!(json.contains(r#""type":"Prefix""#), "json: {json}");
+        assert!(json.contains(r#""value":"pre_""#), "json: {json}");
     }
 }
