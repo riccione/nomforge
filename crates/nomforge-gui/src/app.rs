@@ -49,8 +49,9 @@ impl eframe::App for NomforgeApp {
         });
         ui.separator();
 
-        // Directory picker
-        crate::panels::folder_picker::show(ui, &mut self.state);
+        // Directory picker; auto-scan when enabled and a directory was chosen.
+        let dir_picked = crate::panels::folder_picker::show(ui, &mut self.state);
+        self.auto_scan_if_enabled(ui.ctx(), dir_picked);
 
         ui.separator();
 
@@ -170,6 +171,14 @@ impl NomforgeApp {
                 self.state.status = format!("Cannot resolve directory {}: {e}", self.state.dir);
                 None
             }
+        }
+    }
+
+    /// Scan the selected directory when auto-scan is enabled and the user just
+    /// picked one.
+    fn auto_scan_if_enabled(&mut self, ctx: &egui::Context, dir_picked: bool) {
+        if dir_picked && self.state.settings.auto_scan {
+            self.scan_files(ctx);
         }
     }
 
@@ -722,6 +731,39 @@ mod tests {
         assert_eq!(app.state.status, "Renamed 1 file(s)");
         assert!(app.state.pending_conflicts.is_empty());
         assert!(!app.state.show_conflict_modal);
+    }
+
+    #[test]
+    fn auto_scan_only_when_enabled_and_picked() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+        let dir_str = dir.to_string_lossy().into_owned();
+
+        // Enabled (default) + picked -> scans.
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir_str.clone();
+        app.auto_scan_if_enabled(&ctx, true);
+        assert!(app.state.job.is_some());
+        app.wait_for_job(&ctx);
+        assert_eq!(app.state.files.len(), 1);
+        assert_eq!(app.state.status, "Found 1 file(s)");
+
+        // Disabled -> nothing happens.
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir_str.clone();
+        app.state.settings.auto_scan = false;
+        app.auto_scan_if_enabled(&ctx, true);
+        assert!(app.state.job.is_none());
+        assert_eq!(app.state.status, "Ready");
+
+        // Nothing picked -> nothing happens.
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir_str;
+        app.auto_scan_if_enabled(&ctx, false);
+        assert!(app.state.job.is_none());
+        assert_eq!(app.state.status, "Ready");
     }
 
     #[test]

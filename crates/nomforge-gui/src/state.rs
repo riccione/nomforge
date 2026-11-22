@@ -455,6 +455,7 @@ mod tests {
             settings: Settings {
                 theme: ThemeSetting::Dark,
                 font_size: 20.0,
+                ..Default::default()
             },
             ..Default::default()
         };

@@ -5,9 +5,9 @@ use crate::state::State;
 
 /// Render the settings modal (if open).
 ///
-/// Changes apply live without restarting the app, but only once they are
-/// committed: a theme radio click, a slider release, or Enter in the font size
-/// input.
+/// Changes apply live without restarting the app. Theme and the auto-scan
+/// toggle are discrete and apply immediately; the font size is committed on
+/// slider release or Enter in the input.
 pub fn show(ui: &mut egui::Ui, state: &mut State) {
     if !state.show_settings_modal {
         return;
@@ -71,6 +71,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
                     state.draft_font_size_input = format!("{:.0}", state.settings.font_size);
                 }
             }
+        }
+
+        ui.add_space(8.0);
+        let mut auto_scan = state.settings.auto_scan;
+        if ui
+            .checkbox(
+                &mut auto_scan,
+                "Scan automatically when a directory is selected",
+            )
+            .changed()
+        {
+            state.settings.auto_scan = auto_scan;
+            persist(state);
         }
 
         ui.add_space(16.0);
