@@ -32,11 +32,7 @@ impl eframe::App for NomforgeApp {
         ui.horizontal(|ui| {
             ui.heading(format!("nomforge v{}", { env!("CARGO_PKG_VERSION") }));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .button(egui_material_icons::icons::ICON_SETTINGS)
-                    .on_hover_text("Settings")
-                    .clicked()
-                {
+                if ui.button("Settings").clicked() {
                     self.state.open_settings();
                 }
             });
@@ -468,21 +464,6 @@ mod tests {
         );
         // Light theme must actually produce a brighter background.
         assert!(light[0] > dark[0], "light={light:?} dark={dark:?}");
-    }
-
-    #[test]
-    fn material_icon_renders() {
-        let ctx = egui::Context::default();
-        egui_material_icons::initialize(&ctx);
-
-        let mut icon_rect = None;
-        ctx.run_ui(Default::default(), |ui| {
-            icon_rect = Some(ui.button(egui_material_icons::icons::ICON_SETTINGS).rect);
-        })
-        .drop_without_applying_deltas();
-
-        let rect = icon_rect.expect("settings icon button was not laid out");
-        assert!(rect.width() > 0.0, "rect: {rect:?}");
     }
 
     #[test]

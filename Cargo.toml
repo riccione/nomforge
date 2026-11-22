@@ -39,5 +39,6 @@ pre-release-commit-message = "chore: Release nomforge version {{version}}"
 [profile.release]
 strip = true
 lto = true
-#panic = "abort"
+codegen-units = 1
+panic = "abort"
 opt-level = "z"
