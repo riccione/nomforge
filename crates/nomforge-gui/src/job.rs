@@ -38,6 +38,8 @@ pub enum JobOutcome {
 /// Handle to a running background job.
 pub struct Job {
     pub rx: Receiver<JobOutcome>,
+    /// Keep the status message that was set before this job started.
+    pub keep_status: bool,
 }
 
 /// Scan `dir`, returning the files and the number of unreadable entries skipped.

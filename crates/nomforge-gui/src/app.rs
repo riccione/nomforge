@@ -182,21 +182,27 @@ impl NomforgeApp {
     ///
     /// Returns `None` (after setting the status) when a job is already running
     /// or the directory cannot be resolved.
-    fn prepare_scan(&mut self, status: &str) -> Option<(PathBuf, ScanOptions)> {
+    fn prepare_scan(&mut self, status: Option<&str>) -> Option<(PathBuf, ScanOptions)> {
         if self.is_busy() {
             return None;
         }
 
+        // `reset_output` sets the status to "Ready"; preserve it when the
+        // caller wants a quiet preparation (e.g. the post-undo refresh).
+        let previous_status = self.state.status.clone();
         self.state.reset_output();
 
         let dir = self.resolve_dir()?;
         let options = self.state.build_scan_options();
-        self.state.status = status.into();
+        self.state.status = match status {
+            Some(status) => status.into(),
+            None => previous_status,
+        };
         Some((dir, options))
     }
 
     /// Like [`Self::prepare_scan`], plus the rules needed for planning.
-    fn prepare_plan(&mut self, status: &str) -> Option<PlanJobInput> {
+    fn prepare_plan(&mut self, status: Option<&str>) -> Option<PlanJobInput> {
         let (dir, options) = self.prepare_scan(status)?;
 
         let rules = match self.state.build_rules() {
@@ -215,14 +221,14 @@ impl NomforgeApp {
     }
 
     fn scan_files(&mut self, ctx: &egui::Context) {
-        let Some((dir, options)) = self.prepare_scan("Scanning\u{2026}") else {
+        let Some((dir, options)) = self.prepare_scan(Some("Scanning\u{2026}")) else {
             return;
         };
         self.spawn(ctx, move || JobOutcome::Scan(job::scan(&dir, &options)));
     }
 
     fn preview(&mut self, ctx: &egui::Context) {
-        let Some(work) = self.prepare_plan("Planning\u{2026}") else {
+        let Some(work) = self.prepare_plan(Some("Planning\u{2026}")) else {
             return;
         };
         self.spawn(ctx, move || {
@@ -231,7 +237,7 @@ impl NomforgeApp {
     }
 
     fn apply(&mut self, ctx: &egui::Context) {
-        let Some(work) = self.prepare_plan("Applying\u{2026}") else {
+        let Some(work) = self.prepare_plan(Some("Applying\u{2026}")) else {
             return;
         };
 
@@ -240,6 +246,19 @@ impl NomforgeApp {
         let history = self.undo_log_target();
         self.spawn(ctx, move || {
             JobOutcome::Apply(job::apply(&work.dir, &work.options, work.rules, history))
+        });
+    }
+
+    /// Refresh plans after an undo while keeping the undo confirmation visible.
+    fn preview_after_undo(&mut self, ctx: &egui::Context) {
+        let undo_status = self.state.status.clone();
+        let Some(work) = self.prepare_plan(None) else {
+            // Keep the confirmation even if the refresh cannot start.
+            self.state.status = undo_status;
+            return;
+        };
+        self.spawn_quiet(ctx, move || {
+            JobOutcome::Preview(job::preview(&work.dir, &work.options, work.rules))
         });
     }
 
@@ -289,13 +308,29 @@ impl NomforgeApp {
     where
         F: FnOnce() -> JobOutcome + Send + 'static,
     {
+        self.spawn_with(ctx, false, work);
+    }
+
+    /// Like [`Self::spawn`], but leaves the current status message untouched
+    /// when a successful preview result arrives.
+    fn spawn_quiet<F>(&mut self, ctx: &egui::Context, work: F)
+    where
+        F: FnOnce() -> JobOutcome + Send + 'static,
+    {
+        self.spawn_with(ctx, true, work);
+    }
+
+    fn spawn_with<F>(&mut self, ctx: &egui::Context, keep_status: bool, work: F)
+    where
+        F: FnOnce() -> JobOutcome + Send + 'static,
+    {
         let (tx, rx) = std::sync::mpsc::channel();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let _ = tx.send(work());
             ctx.request_repaint();
         });
-        self.state.job = Some(Job { rx });
+        self.state.job = Some(Job { rx, keep_status });
     }
 
     /// Pick up the outcome of a finished background job, if any.
@@ -314,12 +349,13 @@ impl NomforgeApp {
             }
         };
 
+        let keep_status = job.keep_status;
         self.state.job = None;
-        self.finish(outcome, ctx);
+        self.finish(outcome, ctx, keep_status);
     }
 
     /// Apply a finished job's outcome to the UI state.
-    fn finish(&mut self, outcome: JobOutcome, ctx: &egui::Context) {
+    fn finish(&mut self, outcome: JobOutcome, ctx: &egui::Context, keep_status: bool) {
         match outcome {
             JobOutcome::Scan(Ok((files, skipped))) => {
                 self.state.status =
@@ -329,14 +365,18 @@ impl NomforgeApp {
             JobOutcome::Scan(Err(message)) => self.state.status = message,
             JobOutcome::Preview(Ok(data)) => {
                 if data.plans.is_empty() {
-                    self.state.status = "No files found".into();
+                    if !keep_status {
+                        self.state.status = "No files found".into();
+                    }
                     return;
                 }
-                self.state.status = format!(
-                    "{} file(s) to rename{}",
-                    data.plans.len(),
-                    skipped_suffix(data.skipped)
-                );
+                if !keep_status {
+                    self.state.status = format!(
+                        "{} file(s) to rename{}",
+                        data.plans.len(),
+                        skipped_suffix(data.skipped)
+                    );
+                }
                 self.state.pending_conflicts = data.conflicts;
                 self.state.plans = data.plans;
             }
@@ -378,8 +418,9 @@ impl NomforgeApp {
                 } else {
                     format!("Reverted {reverted} file(s)")
                 };
-                // Refresh the preview against the restored files.
-                self.preview(ctx);
+                // Refresh the preview against the restored files without
+                // overwriting the undo confirmation.
+                self.preview_after_undo(ctx);
             }
             JobOutcome::Undo(Err(message)) => self.state.status = message,
         }
@@ -389,7 +430,7 @@ impl NomforgeApp {
     fn wait_for_job(&mut self, ctx: &egui::Context) {
         let job = self.state.job.take().expect("no job to wait for");
         let outcome = job.rx.recv().expect("job thread dropped");
-        self.finish(outcome, ctx);
+        self.finish(outcome, ctx, job.keep_status);
     }
 
     fn show_conflict_modal(&mut self, ui: &mut egui::Ui) {
@@ -478,14 +519,17 @@ mod tests {
     #[test]
     fn do_apply_logs_renames_and_allows_undo() {
         let tmp = TempDir::new().unwrap();
-        let dir = tmp.path();
+        // Keep the undo log outside the scanned directory so the post-undo
+        // refresh does not plan to rename it.
+        let dir = tmp.path().join("files");
+        fs::create_dir_all(&dir).unwrap();
 
         // Create test files
         fs::write(dir.join("file1.txt"), "content1").unwrap();
         fs::write(dir.join("file2.txt"), "content2").unwrap();
 
         // Set up undo log path
-        let undo_path = dir.join("undo_log.json");
+        let undo_path = tmp.path().join("undo_log.json");
 
         let mut app = NomforgeApp {
             state: State {
@@ -533,6 +577,11 @@ mod tests {
         app.wait_for_job(&ctx);
         app.wait_for_job(&ctx);
 
+        // The undo confirmation survives the refresh job, which still
+        // repopulates the plans.
+        assert_eq!(app.state.status, "Reverted 2 file(s)");
+        assert_eq!(app.state.plans.len(), 2);
+
         // Verify files are restored
         assert!(dir.join("file1.txt").exists());
         assert!(dir.join("file2.txt").exists());
@@ -568,6 +617,8 @@ mod tests {
 
         assert_eq!(app.state.plans.len(), 1);
         assert_eq!(app.state.plans[0].source.file_name().unwrap(), "a.txt");
+        // A user-triggered preview still updates the status normally.
+        assert_eq!(app.state.status, "1 file(s) to rename");
     }
 
     #[test]
