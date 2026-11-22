@@ -369,7 +369,18 @@ impl NomforgeApp {
             JobOutcome::Scan(Ok((files, skipped))) => {
                 self.state.status =
                     format!("Found {} file(s){}", files.len(), skipped_suffix(skipped));
-                self.state.files = files;
+                self.state.files = files.clone();
+
+                // Switch to the preview screen by planning the scanned files,
+                // without walking the directory a second time.
+                match self.state.build_rules() {
+                    Ok(rules) => {
+                        self.spawn(ctx, move || {
+                            JobOutcome::Preview(job::preview_files(files, rules, skipped))
+                        });
+                    }
+                    Err(e) => self.state.status = format!("Rule error: {e}"),
+                }
             }
             JobOutcome::Scan(Err(message)) => self.state.status = message,
             JobOutcome::Preview(Ok(data)) => {
@@ -553,7 +564,8 @@ mod tests {
 
         // Scan files
         app.scan_files(&ctx);
-        app.wait_for_job(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
         assert_eq!(app.state.files.len(), 2);
 
         // Build rules and plans
@@ -617,7 +629,8 @@ mod tests {
 
         // Cache a scan that includes both files, then tighten the filter.
         app.scan_files(&ctx);
-        app.wait_for_job(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
         assert_eq!(app.state.files.len(), 2);
         app.state.filter_ext = "txt".into();
 
@@ -650,7 +663,8 @@ mod tests {
         let ctx = egui::Context::default();
 
         app.scan_files(&ctx);
-        app.wait_for_job(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
         assert_eq!(app.state.files.len(), 2);
         app.state.filter_ext = "txt".into();
 
@@ -746,9 +760,11 @@ mod tests {
         app.state.dir = dir_str.clone();
         app.auto_scan_if_enabled(&ctx, true);
         assert!(app.state.job.is_some());
-        app.wait_for_job(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
         assert_eq!(app.state.files.len(), 1);
-        assert_eq!(app.state.status, "Found 1 file(s)");
+        assert_eq!(app.state.plans.len(), 1);
+        assert_eq!(app.state.status, "1 file(s) to rename");
 
         // Disabled -> nothing happens.
         let mut app = NomforgeApp::default();
@@ -764,6 +780,54 @@ mod tests {
         app.auto_scan_if_enabled(&ctx, false);
         assert!(app.state.job.is_none());
         assert_eq!(app.state.status, "Ready");
+    }
+
+    #[test]
+    fn scan_switches_to_preview() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let undo_path = tmp.path().join("undo.json");
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.prefix = "x_".into();
+        app.state.history_file = undo_path.to_string_lossy().into_owned();
+
+        let ctx = egui::Context::default();
+        app.scan_files(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
+
+        assert_eq!(app.state.plans.len(), 1);
+        assert_eq!(app.state.plans[0].source.file_name().unwrap(), "a.txt");
+        assert_eq!(app.state.plans[0].target.file_name().unwrap(), "x_a.txt");
+        assert_eq!(app.state.status, "1 file(s) to rename");
+        assert!(app.state.pending_conflicts.is_empty());
+    }
+
+    #[test]
+    fn scan_with_invalid_rules_lists_files_but_reports_rule_error() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.case = "sideways".into();
+
+        let ctx = egui::Context::default();
+        app.scan_files(&ctx);
+        app.wait_for_job(&ctx);
+
+        // No preview job is chained when the rules cannot be built.
+        assert!(app.state.job.is_none());
+        assert_eq!(app.state.files.len(), 1);
+        assert!(
+            app.state.status.starts_with("Rule error"),
+            "status: {}",
+            app.state.status
+        );
     }
 
     #[test]
@@ -885,7 +949,8 @@ mod tests {
 
         let ctx = egui::Context::default();
         app.scan_files(&ctx);
-        app.wait_for_job(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
         let rules = app.state.build_rules().unwrap();
         let engine = nomforge_core::RenameEngine::new(rules);
         let plans = engine.plan(&app.state.files).unwrap();

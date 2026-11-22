@@ -58,6 +58,15 @@ pub fn preview(
     rules: Vec<RenameRule>,
 ) -> Result<PreviewData, String> {
     let (files, skipped) = scan(dir, options)?;
+    preview_files(files, rules, skipped)
+}
+
+/// Plan files that were already scanned and detect conflicts.
+pub fn preview_files(
+    files: Vec<PathBuf>,
+    rules: Vec<RenameRule>,
+    skipped: usize,
+) -> Result<PreviewData, String> {
     if files.is_empty() {
         return Ok(PreviewData {
             plans: Vec::new(),
