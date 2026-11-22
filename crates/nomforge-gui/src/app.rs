@@ -1,4 +1,7 @@
+use std::path::PathBuf;
+
 use eframe::egui;
+use nomforge_core::{RenameRule, ScanOptions};
 
 use crate::job::{self, Job, JobOutcome};
 use crate::state::State;
@@ -16,6 +19,13 @@ fn skipped_suffix(count: usize) -> String {
 #[derive(Default)]
 pub struct NomforgeApp {
     state: State,
+}
+
+/// Inputs captured on the UI thread for a planning job.
+struct PlanJobInput {
+    dir: PathBuf,
+    options: ScanOptions,
+    rules: Vec<RenameRule>,
 }
 
 impl eframe::App for NomforgeApp {
@@ -153,7 +163,7 @@ impl NomforgeApp {
     ///
     /// Plans built from absolute paths keep undo log entries valid no matter
     /// which working directory a later undo runs from.
-    fn resolve_dir(&mut self) -> Option<std::path::PathBuf> {
+    fn resolve_dir(&mut self) -> Option<PathBuf> {
         match std::fs::canonicalize(&self.state.dir) {
             Ok(dir) => Some(dir),
             Err(e) => {
@@ -163,79 +173,78 @@ impl NomforgeApp {
         }
     }
 
-    fn scan_files(&mut self, ctx: &egui::Context) {
-        if self.state.job.is_some() {
-            return;
+    /// Whether a background job is currently running.
+    fn is_busy(&self) -> bool {
+        self.state.job.is_some()
+    }
+
+    /// Reset the output, resolve the directory and capture the scan options.
+    ///
+    /// Returns `None` (after setting the status) when a job is already running
+    /// or the directory cannot be resolved.
+    fn prepare_scan(&mut self, status: &str) -> Option<(PathBuf, ScanOptions)> {
+        if self.is_busy() {
+            return None;
         }
 
         self.state.reset_output();
 
-        let Some(dir) = self.resolve_dir() else {
-            return;
+        let dir = self.resolve_dir()?;
+        let options = self.state.build_scan_options();
+        self.state.status = status.into();
+        Some((dir, options))
+    }
+
+    /// Like [`Self::prepare_scan`], plus the rules needed for planning.
+    fn prepare_plan(&mut self, status: &str) -> Option<PlanJobInput> {
+        let (dir, options) = self.prepare_scan(status)?;
+
+        let rules = match self.state.build_rules() {
+            Ok(rules) => rules,
+            Err(e) => {
+                self.state.status = format!("Rule error: {e}");
+                return None;
+            }
         };
 
-        let options = self.state.build_scan_options();
-        self.state.status = "Scanning\u{2026}".into();
+        Some(PlanJobInput {
+            dir,
+            options,
+            rules,
+        })
+    }
+
+    fn scan_files(&mut self, ctx: &egui::Context) {
+        let Some((dir, options)) = self.prepare_scan("Scanning\u{2026}") else {
+            return;
+        };
         self.spawn(ctx, move || JobOutcome::Scan(job::scan(&dir, &options)));
     }
 
     fn preview(&mut self, ctx: &egui::Context) {
-        if self.state.job.is_some() {
-            return;
-        }
-
-        self.state.reset_output();
-
-        let Some(dir) = self.resolve_dir() else {
+        let Some(work) = self.prepare_plan("Planning\u{2026}") else {
             return;
         };
-
-        let rules = match self.state.build_rules() {
-            Ok(r) => r,
-            Err(e) => {
-                self.state.status = format!("Rule error: {e}");
-                return;
-            }
-        };
-
-        // Always rescan: filters and scan options may have changed since the
-        // last scan, so reusing a cached file list could act on excluded files.
-        let options = self.state.build_scan_options();
-        self.state.status = "Planning\u{2026}".into();
         self.spawn(ctx, move || {
-            JobOutcome::Preview(job::preview(&dir, &options, rules))
+            JobOutcome::Preview(job::preview(&work.dir, &work.options, work.rules))
         });
     }
 
     fn apply(&mut self, ctx: &egui::Context) {
-        if self.state.job.is_some() {
-            return;
-        }
-
-        self.state.reset_output();
-
-        let Some(dir) = self.resolve_dir() else {
+        let Some(work) = self.prepare_plan("Applying\u{2026}") else {
             return;
         };
 
-        let rules = match self.state.build_rules() {
-            Ok(r) => r,
-            Err(e) => {
-                self.state.status = format!("Rule error: {e}");
-                return;
-            }
-        };
-
-        let options = self.state.build_scan_options();
+        // Always rescan: filters and scan options may have changed since the
+        // last scan, so reusing a cached file list could act on excluded files.
         let history = self.undo_log_target();
-        self.state.status = "Applying\u{2026}".into();
         self.spawn(ctx, move || {
-            JobOutcome::Apply(job::apply(&dir, &options, rules, history))
+            JobOutcome::Apply(job::apply(&work.dir, &work.options, work.rules, history))
         });
     }
 
     fn perform_undo(&mut self, ctx: &egui::Context) {
-        if self.state.job.is_some() {
+        if self.is_busy() {
             return;
         }
 
@@ -245,16 +254,16 @@ impl NomforgeApp {
     }
 
     /// Configured undo-log path.
-    fn history_path(&self) -> std::path::PathBuf {
+    fn history_path(&self) -> PathBuf {
         if self.state.history_file.is_empty() {
             nomforge_core::default_undo_log_path()
         } else {
-            std::path::PathBuf::from(&self.state.history_file)
+            PathBuf::from(&self.state.history_file)
         }
     }
 
     /// Undo-log path, unless undo logging is disabled.
-    fn undo_log_target(&self) -> Option<std::path::PathBuf> {
+    fn undo_log_target(&self) -> Option<PathBuf> {
         (!self.state.no_undo).then(|| self.history_path())
     }
 
@@ -264,7 +273,7 @@ impl NomforgeApp {
         plans: Vec<nomforge_core::RenamePlan>,
         ctx: &egui::Context,
     ) {
-        if self.state.job.is_some() {
+        if self.is_busy() {
             return;
         }
 
@@ -662,6 +671,39 @@ mod tests {
         assert_eq!(app.state.status, "Renamed 1 file(s)");
         assert!(app.state.pending_conflicts.is_empty());
         assert!(!app.state.show_conflict_modal);
+    }
+
+    #[test]
+    fn preview_and_apply_report_rule_errors() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+
+        for action in ["preview", "apply"] {
+            let mut app = NomforgeApp {
+                state: State {
+                    dir: dir.to_string_lossy().into_owned(),
+                    // An unknown case transform makes `build_rules` fail.
+                    case: "sideways".into(),
+                    ..Default::default()
+                },
+            };
+
+            if action == "preview" {
+                app.preview(&ctx);
+            } else {
+                app.apply(&ctx);
+            }
+
+            assert!(app.state.job.is_none(), "{action} spawned a job");
+            assert!(
+                app.state.status.starts_with("Rule error"),
+                "{action} status: {}",
+                app.state.status
+            );
+            assert!(dir.join("a.txt").exists(), "{action} renamed a file");
+        }
     }
 
     #[test]
