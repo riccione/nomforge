@@ -35,12 +35,9 @@ impl RenameEngine {
     /// Generate a dry-run preview of renames without mutating the filesystem.
     ///
     /// Plans whose rules change nothing keep `source == target` and are never
-    /// rewritten by disambiguation, even when the file exists on disk.
+    /// rewritten by disambiguation, even when the file exists on disk. An
+    /// empty input yields an empty plan list.
     pub fn plan(&self, files: &[PathBuf]) -> Result<Vec<RenamePlan>> {
-        if files.is_empty() {
-            return Err(NomforgeError::NoFilesFound);
-        }
-
         let mut plans = Vec::with_capacity(files.len());
 
         for (counter, path) in files.iter().enumerate() {
@@ -55,7 +52,8 @@ impl RenameEngine {
     ///
     /// Continues past per-plan failures; inspect `RenameResult::success`. A
     /// plan whose target already exists on disk (including one created
-    /// earlier in the same batch) fails instead of overwriting.
+    /// earlier in the same batch) fails instead of overwriting. An empty plan
+    /// list yields an empty result list.
     ///
     /// Applying is plan-driven and does not consult the engine's rules; see
     /// [`apply_plans`] for the stateless entry point.
@@ -393,10 +391,11 @@ mod tests {
     }
 
     #[test]
-    fn plan_no_files_returns_error() {
+    fn empty_input_returns_empty_plan() {
         let engine = RenameEngine::new(vec![]);
-        let result = engine.plan(&[]);
-        assert!(result.is_err());
+        assert!(engine.plan(&[]).unwrap().is_empty());
+        // `apply` has always behaved this way; the contract is now consistent.
+        assert!(engine.apply(&[]).unwrap().is_empty());
     }
 
     #[test]

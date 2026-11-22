@@ -22,9 +22,6 @@ pub enum NomforgeError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
-    #[error("No files matched the given filters")]
-    NoFilesFound,
-
     /// A semantic undo-log failure (e.g. no history, nothing revertable).
     #[error("Undo log error: {0}")]
     UndoLog(String),
