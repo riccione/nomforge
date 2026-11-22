@@ -1,4 +1,4 @@
-//! Persistent GUI settings (theme and font size).
+//! Persistent GUI settings (theme, font size and auto-scan).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -44,10 +44,17 @@ pub struct Settings {
     pub theme: ThemeSetting,
     #[serde(default = "default_font_size")]
     pub font_size: f32,
+    /// Scan the selected directory automatically.
+    #[serde(default = "default_auto_scan")]
+    pub auto_scan: bool,
 }
 
 fn default_font_size() -> f32 {
     DEFAULT_FONT_SIZE
+}
+
+fn default_auto_scan() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -55,6 +62,7 @@ impl Default for Settings {
         Self {
             theme: ThemeSetting::default(),
             font_size: DEFAULT_FONT_SIZE,
+            auto_scan: true,
         }
     }
 }
@@ -127,10 +135,11 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn defaults_are_system_and_default_size() {
+    fn defaults_are_system_and_auto_scan() {
         let settings = Settings::default();
         assert_eq!(settings.theme, ThemeSetting::System);
         assert_eq!(settings.font_size, DEFAULT_FONT_SIZE);
+        assert!(settings.auto_scan);
     }
 
     #[test]
@@ -138,9 +147,11 @@ mod tests {
         let settings = Settings {
             theme: ThemeSetting::Dark,
             font_size: 18.0,
+            auto_scan: false,
         };
         let json = serde_json::to_string(&settings).unwrap();
         assert!(json.contains("\"dark\""), "json: {json}");
+        assert!(json.contains("\"auto_scan\":false"), "json: {json}");
         let loaded: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded, settings);
     }
@@ -149,6 +160,7 @@ mod tests {
     fn missing_fields_use_defaults() {
         let loaded: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(loaded, Settings::default());
+        assert!(loaded.auto_scan, "auto-scan defaults to on");
     }
 
     #[test]
@@ -173,6 +185,7 @@ mod tests {
         let settings = Settings {
             theme: ThemeSetting::Light,
             font_size: 20.0,
+            auto_scan: false,
         };
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
