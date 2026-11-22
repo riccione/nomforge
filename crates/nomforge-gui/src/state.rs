@@ -56,10 +56,6 @@ pub struct State {
     pub show_conflict_modal: bool,
     pub pending_conflicts: Vec<Conflict>,
 
-    /// Output / results.
-    #[expect(dead_code, reason = "reserved for future verbose output feature")]
-    pub verbose: bool,
-
     /// Files found by scanner.
     pub files: Vec<PathBuf>,
 
@@ -109,7 +105,6 @@ impl Default for State {
             job: None,
             show_conflict_modal: false,
             pending_conflicts: Vec::new(),
-            verbose: false,
             files: Vec::new(),
             plans: Vec::new(),
             results: Vec::new(),
