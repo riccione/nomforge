@@ -1,13 +1,82 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use colored::Colorize;
-use nomforge_core::{Conflict, ConflictReason, RenamePlan};
+use nomforge_core::{Conflict, ConflictReason, RenamePlan, RenameResult};
+use unicode_width::UnicodeWidthStr;
 
-/// Calculate the maximum column width based on filenames, capped at 60.
-fn max_filename_width(names: &[&str]) -> usize {
-    let max_len = names.iter().map(|n| n.len()).max().unwrap_or(20);
-    // Cap at 60 to prevent overly wide output, minimum 20
-    max_len.clamp(20, 60)
+/// File name for display, borrowing when the path is valid UTF-8.
+fn display_name(path: &Path) -> Cow<'_, str> {
+    path.file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default()
+}
+
+/// Display width in terminal columns (CJK and emoji take two columns).
+fn display_width(text: &str) -> usize {
+    text.width()
+}
+
+/// Pad `text` with spaces up to `width` display columns.
+///
+/// Pad before colorizing: ANSI escape sequences emitted by `colored` would
+/// otherwise be counted towards the formatted width.
+fn pad(text: &str, width: usize) -> String {
+    let padding = width.saturating_sub(display_width(text));
+    let mut padded = String::with_capacity(text.len() + padding);
+    padded.push_str(text);
+    padded.extend(std::iter::repeat_n(' ', padding));
+    padded
+}
+
+/// Maximum column width in display columns, capped at 60, minimum 20.
+fn max_width(names: &[Cow<'_, str>]) -> usize {
+    names
+        .iter()
+        .map(|name| display_width(name))
+        .max()
+        .unwrap_or(20)
+        .clamp(20, 60)
+}
+
+/// Collect source and target display names for table rows.
+fn columns<'a, T>(
+    items: &'a [T],
+    source: impl Fn(&'a T) -> &'a Path,
+    target: impl Fn(&'a T) -> &'a Path,
+) -> (Vec<Cow<'a, str>>, Vec<Cow<'a, str>>) {
+    let sources = items
+        .iter()
+        .map(|item| display_name(source(item)))
+        .collect();
+    let targets = items
+        .iter()
+        .map(|item| display_name(target(item)))
+        .collect();
+    (sources, targets)
+}
+
+/// Counts shown in the results summary.
+struct Summary {
+    renamed: usize,
+    failed: usize,
+    skipped: usize,
+}
+
+/// Summarize results, never counting unchanged entries as renamed.
+fn summarize(results: &[RenameResult]) -> Summary {
+    let failed = results.iter().filter(|r| !r.success).count();
+    let skipped = results
+        .iter()
+        .filter(|r| r.success && r.source == r.target)
+        .count();
+    let succeeded = results.len() - failed;
+
+    Summary {
+        renamed: succeeded - skipped,
+        failed,
+        skipped,
+    }
 }
 
 /// Print the preview table for a dry-run.
@@ -17,61 +86,36 @@ pub fn print_preview(plans: &[RenamePlan]) {
         return;
     }
 
-    // Collect filenames and calculate dynamic widths
-    let source_names: Vec<String> = plans
-        .iter()
-        .map(|p| {
-            p.source
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default()
-        })
-        .collect();
-
-    let target_names: Vec<String> = plans
-        .iter()
-        .map(|p| {
-            p.target
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default()
-        })
-        .collect();
-
-    let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
-    let target_refs: Vec<&str> = target_names.iter().map(|s| s.as_str()).collect();
-
-    let source_width = max_filename_width(&source_refs);
-    let target_width = max_filename_width(&target_refs);
+    let (sources, targets) = columns(plans, |plan| &plan.source, |plan| &plan.target);
+    let source_width = max_width(&sources);
+    let target_width = max_width(&targets);
 
     println!();
     println!(
-        "  {:<source_width$} {} {:<target_width$}",
-        "FILE".bold(),
+        "  {} {} {}",
+        pad("FILE", source_width).bold(),
         "->".dimmed(),
-        "NEW NAME".bold()
+        pad("NEW NAME", target_width).bold()
     );
-    println!("  {}", "-".repeat(source_width + 3 + target_width).dimmed());
+    println!(
+        "  {}",
+        "-".repeat(source_width + 1 + 2 + 1 + target_width).dimmed()
+    );
 
-    for (source_name, target_name, plan) in source_names
-        .iter()
-        .zip(target_names.iter())
-        .zip(plans.iter())
-        .map(|((s, t), p)| (s, t, p))
-    {
+    for ((source, target), plan) in sources.iter().zip(targets.iter()).zip(plans) {
         if plan.source == plan.target {
             println!(
-                "  {:<source_width$} {} {:<target_width$}",
-                source_name.dimmed(),
+                "  {} {} {}",
+                pad(source, source_width).dimmed(),
                 "->".dimmed(),
-                "(no change)".dimmed()
+                pad("(no change)", target_width).dimmed()
             );
         } else {
             println!(
-                "  {:<source_width$} {} {:<target_width$}",
-                source_name,
+                "  {} {} {}",
+                pad(source, source_width),
                 "->".green(),
-                target_name.green()
+                pad(target, target_width).green()
             );
         }
     }
@@ -82,83 +126,57 @@ pub fn print_preview(plans: &[RenamePlan]) {
 }
 
 /// Print the result table after applying renames.
-pub fn print_results(results: &[nomforge_core::RenameResult]) {
+pub fn print_results(results: &[RenameResult]) {
     if results.is_empty() {
         println!("{}", "No results.".yellow());
         return;
     }
 
-    // Collect filenames and calculate dynamic widths
-    let source_names: Vec<String> = results
-        .iter()
-        .map(|r| {
-            r.source
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default()
-        })
-        .collect();
-
-    let target_names: Vec<String> = results
-        .iter()
-        .map(|r| {
-            r.target
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default()
-        })
-        .collect();
-
-    let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
-    let target_refs: Vec<&str> = target_names.iter().map(|s| s.as_str()).collect();
-
-    let source_width = max_filename_width(&source_refs);
-    let target_width = max_filename_width(&target_refs);
+    let (sources, targets) = columns(results, |result| &result.source, |result| &result.target);
+    let source_width = max_width(&sources);
+    let target_width = max_width(&targets);
+    let status_width = display_width("STATUS");
 
     println!();
     println!(
-        "  {:<source_width$} {:<target_width$} {}",
-        "FILE".bold(),
-        "NEW NAME".bold(),
+        "  {} {} {}",
+        pad("FILE", source_width).bold(),
+        pad("NEW NAME", target_width).bold(),
         "STATUS".bold()
     );
     println!(
         "  {}",
-        "-".repeat(source_width + 1 + target_width + 1 + 8).dimmed()
+        "-".repeat(source_width + 1 + target_width + 1 + status_width)
+            .dimmed()
     );
 
-    for (source_name, target_name, result) in source_names
-        .iter()
-        .zip(target_names.iter())
-        .zip(results.iter())
-        .map(|((s, t), r)| (s, t, r))
-    {
+    for ((source, target), result) in sources.iter().zip(targets.iter()).zip(results) {
         if result.source == result.target {
             println!(
-                "  {:<source_width$} {:<target_width$} {}",
-                source_name.dimmed(),
-                "(no change)".dimmed(),
+                "  {} {} {}",
+                pad(source, source_width).dimmed(),
+                pad("(no change)", target_width).dimmed(),
                 "ok (unchanged)".dimmed()
             );
         } else if result.success {
             println!(
-                "  {:<source_width$} {:<target_width$} {}",
-                source_name,
-                target_name,
+                "  {} {} {}",
+                pad(source, source_width),
+                pad(target, target_width),
                 "ok".green().bold()
             );
         } else {
             println!(
-                "  {:<source_width$} {:<target_width$} {}",
-                source_name,
-                target_name,
+                "  {} {} {}",
+                pad(source, source_width),
+                pad(target, target_width),
                 "FAILED".red().bold()
             );
             if let Some(err) = &result.error {
                 println!(
-                    "  {:<source_width$} {:<target_width$}   {}",
-                    "",
-                    "",
+                    "  {} {}   {}",
+                    " ".repeat(source_width),
+                    " ".repeat(target_width),
                     err.red()
                 );
             }
@@ -166,38 +184,24 @@ pub fn print_results(results: &[nomforge_core::RenameResult]) {
     }
 
     println!();
-    let succeeded = results.iter().filter(|r| r.success).count();
-    let failed = results.iter().filter(|r| !r.success).count();
-    let skipped = results
-        .iter()
-        .filter(|r| r.source == r.target && r.success)
-        .count();
+    let Summary {
+        renamed,
+        failed,
+        skipped,
+    } = summarize(results);
 
     if failed > 0 {
         println!(
             "  {}",
-            format!(
-                "Renamed {} file(s), {} failed.",
-                succeeded - skipped,
-                failed
-            )
-            .red()
+            format!("Renamed {renamed} file(s), {failed} failed.").red()
         );
     } else if skipped > 0 {
         println!(
             "  {}",
-            format!(
-                "Renamed {} file(s), {} unchanged.",
-                succeeded - skipped,
-                skipped
-            )
-            .cyan()
+            format!("Renamed {renamed} file(s), {skipped} unchanged.").cyan()
         );
     } else {
-        println!(
-            "  {}",
-            format!("Renamed {} file(s).", succeeded).green().bold()
-        );
+        println!("  {}", format!("Renamed {renamed} file(s).").green().bold());
     }
 }
 
@@ -266,19 +270,19 @@ mod tests {
     #[test]
     fn results_with_values() {
         let results = vec![
-            nomforge_core::RenameResult {
+            RenameResult {
                 source: PathBuf::from("/tmp/photo.jpg"),
                 target: PathBuf::from("/tmp/renamed.jpg"),
                 success: true,
                 error: None,
             },
-            nomforge_core::RenameResult {
+            RenameResult {
                 source: PathBuf::from("/tmp/doc.txt"),
                 target: PathBuf::from("/tmp/doc.txt"),
                 success: true,
                 error: None,
             },
-            nomforge_core::RenameResult {
+            RenameResult {
                 source: PathBuf::from("/tmp/fail.txt"),
                 target: PathBuf::from("/tmp/fail.txt"),
                 success: false,
@@ -306,5 +310,87 @@ mod tests {
     #[test]
     fn scan_summary() {
         print_scan_summary(Path::new("/tmp/photos"), 42);
+    }
+
+    #[test]
+    fn display_width_counts_columns() {
+        assert_eq!(display_width("abc"), 3);
+        assert_eq!(display_width("中文"), 4);
+        assert_eq!(display_width("😀"), 2);
+    }
+
+    #[test]
+    fn pad_uses_display_width() {
+        assert_eq!(pad("ab", 5), "ab   ");
+        // Two CJK characters occupy four columns.
+        assert_eq!(pad("中文", 6), "中文  ");
+        assert_eq!(pad("x", 1), "x");
+        // Shorter widths never truncate.
+        assert_eq!(pad("x", 0), "x");
+    }
+
+    #[test]
+    fn max_width_uses_display_width_and_clamps() {
+        let short = vec![Cow::Borrowed("中文")];
+        assert_eq!(max_width(&short), 20);
+
+        // 30 CJK characters = 60 display columns (would be 30 by char count).
+        let wide = vec![Cow::Owned("中".repeat(30))];
+        assert_eq!(max_width(&wide), 60);
+
+        let long = vec![Cow::Owned("a".repeat(100))];
+        assert_eq!(max_width(&long), 60);
+    }
+
+    #[test]
+    fn summarize_excludes_unchanged_from_renamed() {
+        let results = vec![
+            RenameResult {
+                source: PathBuf::from("/tmp/a.txt"),
+                target: PathBuf::from("/tmp/b.txt"),
+                success: true,
+                error: None,
+            },
+            RenameResult {
+                source: PathBuf::from("/tmp/c.txt"),
+                target: PathBuf::from("/tmp/c.txt"),
+                success: true,
+                error: None,
+            },
+            RenameResult {
+                source: PathBuf::from("/tmp/d.txt"),
+                target: PathBuf::from("/tmp/e.txt"),
+                success: false,
+                error: Some("denied".into()),
+            },
+        ];
+
+        let summary = summarize(&results);
+        assert_eq!(summary.renamed, 1);
+        assert_eq!(summary.skipped, 1);
+        assert_eq!(summary.failed, 1);
+    }
+
+    #[test]
+    fn summarize_all_unchanged() {
+        let results = vec![
+            RenameResult {
+                source: PathBuf::from("/tmp/a.txt"),
+                target: PathBuf::from("/tmp/a.txt"),
+                success: true,
+                error: None,
+            },
+            RenameResult {
+                source: PathBuf::from("/tmp/b.txt"),
+                target: PathBuf::from("/tmp/b.txt"),
+                success: true,
+                error: None,
+            },
+        ];
+
+        let summary = summarize(&results);
+        assert_eq!(summary.renamed, 0);
+        assert_eq!(summary.skipped, 2);
+        assert_eq!(summary.failed, 0);
     }
 }

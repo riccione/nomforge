@@ -2062,6 +2062,7 @@ dependencies = [
  "colored",
  "nomforge-core",
  "tempfile",
+ "unicode-width",
 ]
 
 [[package]]
