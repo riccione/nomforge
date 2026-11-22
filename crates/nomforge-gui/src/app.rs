@@ -758,6 +758,41 @@ mod tests {
     }
 
     #[test]
+    fn renamed_count_excludes_unchanged() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        fs::write(dir.join("keep.txt"), "k").unwrap();
+        let undo_path = tmp.path().join("undo.json");
+
+        let mut app = NomforgeApp {
+            state: State {
+                dir: dir.to_string_lossy().into_owned(),
+                prefix: "x_".into(),
+                history_file: undo_path.to_string_lossy().into_owned(),
+                ..Default::default()
+            },
+        };
+
+        let ctx = egui::Context::default();
+        let plans = vec![
+            nomforge_core::RenamePlan {
+                source: dir.join("a.txt"),
+                target: dir.join("x_a.txt"),
+            },
+            // No-op plan: must not count as renamed.
+            nomforge_core::RenamePlan {
+                source: dir.join("keep.txt"),
+                target: dir.join("keep.txt"),
+            },
+        ];
+        app.spawn_confirmed_apply(plans, &ctx);
+        app.wait_for_job(&ctx);
+
+        assert_eq!(app.state.status, "Renamed 1 file(s)");
+    }
+
+    #[test]
     fn do_apply_works_with_invalid_rule_text() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path();
