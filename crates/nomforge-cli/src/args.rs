@@ -55,6 +55,10 @@ pub struct RenameArgs {
     #[arg(long)]
     pub case: Option<String>,
 
+    /// Change the file extension (without dot; empty string removes it)
+    #[arg(long)]
+    pub new_ext: Option<String>,
+
     /// Counter start value (enables counter rule when set)
     #[arg(long)]
     pub counter_start: Option<usize>,
@@ -139,6 +143,7 @@ mod tests {
             suffix: None,
             remove: None,
             case: None,
+            new_ext: None,
             counter_start: None,
             counter_padding: None,
             counter_position: "prefix".into(),

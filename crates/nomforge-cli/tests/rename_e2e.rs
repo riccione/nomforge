@@ -631,3 +631,71 @@ fn cli_scan_warns_about_unreadable_directory() {
         assert!(stderr.contains("locked"), "stderr: {stderr}");
     }
 }
+
+// --new-ext changes or normalizes extensions, leaving other extensions alone
+#[test]
+fn cli_new_ext_normalizes_case() {
+    let tmp = common::create_test_dir(&[
+        ("a.JPG", "a"),
+        ("b.jpg", "b"),
+        ("c.jpeg", "c"),
+        ("d.heic", "d"),
+    ]);
+
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--ext",
+        "jpg",
+        "--ext",
+        "jpeg",
+        "--new-ext",
+        "jpg",
+        "--no-undo",
+        "--apply",
+    ]);
+
+    assert_eq!(exit_code, 0, "stderr: {stderr}");
+    assert_eq!(
+        common::file_names(tmp.path()),
+        vec!["a.jpg", "b.jpg", "c.jpg", "d.heic"]
+    );
+}
+
+// An empty --new-ext removes the extension
+#[test]
+fn cli_new_ext_empty_removes_extension() {
+    let tmp = common::create_test_dir(&[("a.txt", "a")]);
+
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--new-ext",
+        "",
+        "--no-undo",
+        "--apply",
+    ]);
+
+    assert_eq!(exit_code, 0, "stderr: {stderr}");
+    assert_eq!(common::file_names(tmp.path()), vec!["a"]);
+}
+
+// Extensions are validated: a leading dot is rejected at plan time
+#[test]
+fn cli_new_ext_rejects_leading_dot() {
+    let tmp = common::create_test_dir(&[("a.txt", "a")]);
+
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--new-ext",
+        ".jpg",
+    ]);
+
+    assert_ne!(exit_code, 0, "leading dot must be rejected");
+    assert!(stderr.contains("starts with a dot"), "stderr: {stderr}");
+    assert_eq!(common::file_names(tmp.path()), vec!["a.txt"]);
+}
