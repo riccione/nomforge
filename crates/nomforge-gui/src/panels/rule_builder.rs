@@ -3,33 +3,43 @@ use eframe::egui;
 use crate::state::State;
 
 /// Render the rule builder panel (simple mode by default, regex in advanced mode).
-pub fn show(ui: &mut egui::Ui, state: &mut State) {
+///
+/// Returns `true` when a field was submitted with Enter, which the caller uses
+/// to refresh the preview.
+pub fn show(ui: &mut egui::Ui, state: &mut State) -> bool {
+    let mut submitted = false;
+
     ui.collapsing("Rules", |ui| {
         ui.horizontal(|ui| {
             ui.label("Find:");
-            ui.text_edit_singleline(&mut state.find);
+            let response = ui.text_edit_singleline(&mut state.find);
+            submitted |= crate::panels::submitted(ui, &response);
         });
         ui.horizontal(|ui| {
             ui.label("Replace:");
-            ui.text_edit_singleline(&mut state.replace);
+            let response = ui.text_edit_singleline(&mut state.replace);
+            submitted |= crate::panels::submitted(ui, &response);
         });
 
         ui.separator();
 
         ui.horizontal(|ui| {
             ui.label("Prefix:");
-            ui.text_edit_singleline(&mut state.prefix);
+            let response = ui.text_edit_singleline(&mut state.prefix);
+            submitted |= crate::panels::submitted(ui, &response);
         });
         ui.horizontal(|ui| {
             ui.label("Suffix:");
-            ui.text_edit_singleline(&mut state.suffix);
+            let response = ui.text_edit_singleline(&mut state.suffix);
+            submitted |= crate::panels::submitted(ui, &response);
         });
 
         ui.separator();
 
         ui.horizontal(|ui| {
             ui.label("Remove:");
-            ui.text_edit_singleline(&mut state.remove);
+            let response = ui.text_edit_singleline(&mut state.remove);
+            submitted |= crate::panels::submitted(ui, &response);
         });
 
         ui.separator();
@@ -50,7 +60,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
 
         ui.horizontal(|ui| {
             ui.label("Change Extension (without dot):");
-            ui.text_edit_singleline(&mut state.ext_change);
+            let response = ui.text_edit_singleline(&mut state.ext_change);
+            submitted |= crate::panels::submitted(ui, &response);
         });
 
         // Advanced mode: regex and counter fields
@@ -59,11 +70,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
         if state.advanced_mode {
             ui.horizontal(|ui| {
                 ui.label("Regex:");
-                ui.text_edit_singleline(&mut state.regex);
+                let response = ui.text_edit_singleline(&mut state.regex);
+                submitted |= crate::panels::submitted(ui, &response);
             });
             ui.horizontal(|ui| {
                 ui.label("Replacement:");
-                ui.text_edit_singleline(&mut state.replacement);
+                let response = ui.text_edit_singleline(&mut state.replacement);
+                submitted |= crate::panels::submitted(ui, &response);
             });
 
             ui.separator();
@@ -71,11 +84,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             ui.label("Counter:");
             ui.horizontal(|ui| {
                 ui.label("Start:");
-                ui.add(egui::DragValue::new(&mut state.counter_start).range(0..=10000));
+                let response =
+                    ui.add(egui::DragValue::new(&mut state.counter_start).range(0..=10000));
+                submitted |= crate::panels::submitted(ui, &response);
             });
             ui.horizontal(|ui| {
                 ui.label("Padding:");
-                ui.add(egui::DragValue::new(&mut state.counter_padding).range(0..=10));
+                let response =
+                    ui.add(egui::DragValue::new(&mut state.counter_padding).range(0..=10));
+                submitted |= crate::panels::submitted(ui, &response);
             });
             ui.horizontal(|ui| {
                 ui.label("Position:");
@@ -93,6 +110,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             });
         }
     });
+
+    submitted
 }
 
 #[cfg(test)]
