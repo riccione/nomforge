@@ -4,6 +4,7 @@ use eframe::egui;
 use nomforge_core::{RenameRule, ScanOptions};
 
 use crate::job::{self, Job, JobOutcome};
+use crate::panels::folder_picker::DirPick;
 use crate::state::State;
 
 /// Suffix noting entries that could not be read during a scan.
@@ -49,28 +50,31 @@ impl eframe::App for NomforgeApp {
         });
         ui.separator();
 
-        // Directory picker; auto-scan when enabled and a directory was chosen.
-        let dir_picked = crate::panels::folder_picker::show(ui, &mut self.state);
-        self.auto_scan_if_enabled(ui.ctx(), dir_picked);
+        // Directory picker; Enter always previews, a dialog follows auto-scan.
+        let dir_pick = crate::panels::folder_picker::show(ui, &mut self.state);
+        self.handle_dir_pick(ui.ctx(), dir_pick);
 
         ui.separator();
 
         // Rules section
-        crate::panels::rule_builder::show(ui, &mut self.state);
+        let mut preview_requested = crate::panels::rule_builder::show(ui, &mut self.state);
 
         // Filtering section
         ui.collapsing("Filtering", |ui| {
             ui.horizontal(|ui| {
                 ui.label("Filter by extension:");
-                ui.text_edit_singleline(&mut self.state.filter_ext);
+                let response = ui.text_edit_singleline(&mut self.state.filter_ext);
+                preview_requested |= crate::panels::submitted(ui, &response);
             });
             ui.horizontal(|ui| {
                 ui.label("Include pattern:");
-                ui.text_edit_singleline(&mut self.state.include);
+                let response = ui.text_edit_singleline(&mut self.state.include);
+                preview_requested |= crate::panels::submitted(ui, &response);
             });
             ui.horizontal(|ui| {
                 ui.label("Exclude pattern:");
-                ui.text_edit_singleline(&mut self.state.exclude);
+                let response = ui.text_edit_singleline(&mut self.state.exclude);
+                preview_requested |= crate::panels::submitted(ui, &response);
             });
             ui.checkbox(&mut self.state.recursive, "Recursive");
             ui.checkbox(
@@ -78,6 +82,9 @@ impl eframe::App for NomforgeApp {
                 "Include hidden files and directories",
             );
         });
+
+        // Enter in any rule or filter field refreshes the preview.
+        self.preview_on_submit(ui.ctx(), preview_requested);
 
         // Undo settings
         ui.collapsing("Undo", |ui| {
@@ -179,6 +186,23 @@ impl NomforgeApp {
     fn auto_scan_if_enabled(&mut self, ctx: &egui::Context, dir_picked: bool) {
         if dir_picked && self.state.settings.auto_scan {
             self.scan_files(ctx);
+        }
+    }
+
+    /// React to a directory pick: Enter always previews, while a dialog
+    /// selection follows the auto-scan setting.
+    fn handle_dir_pick(&mut self, ctx: &egui::Context, pick: Option<DirPick>) {
+        match pick {
+            None => {}
+            Some(DirPick::Enter) => self.preview(ctx),
+            Some(DirPick::Dialog) => self.auto_scan_if_enabled(ctx, true),
+        }
+    }
+
+    /// Refresh the preview when a field was submitted with Enter.
+    fn preview_on_submit(&mut self, ctx: &egui::Context, requested: bool) {
+        if requested {
+            self.preview(ctx);
         }
     }
 
@@ -745,6 +769,68 @@ mod tests {
         assert_eq!(app.state.status, "Renamed 1 file(s)");
         assert!(app.state.pending_conflicts.is_empty());
         assert!(!app.state.show_conflict_modal);
+    }
+
+    #[test]
+    fn preview_on_submit_refreshes_only_when_requested() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.prefix = "x_".into();
+
+        app.preview_on_submit(&ctx, false);
+        assert!(app.state.job.is_none());
+
+        app.preview_on_submit(&ctx, true);
+        assert!(app.state.job.is_some());
+        app.wait_for_job(&ctx);
+        assert_eq!(app.state.plans.len(), 1);
+        assert_eq!(app.state.plans[0].target.file_name().unwrap(), "x_a.txt");
+    }
+
+    #[test]
+    fn directory_enter_previews_without_auto_scan() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.settings.auto_scan = false;
+
+        app.handle_dir_pick(&ctx, Some(DirPick::Enter));
+        assert!(app.state.job.is_some());
+        app.wait_for_job(&ctx);
+        assert_eq!(app.state.plans.len(), 1);
+    }
+
+    #[test]
+    fn directory_dialog_respects_auto_scan() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.settings.auto_scan = false;
+
+        // Auto-scan off: choosing a folder does not start anything.
+        app.handle_dir_pick(&ctx, Some(DirPick::Dialog));
+        assert!(app.state.job.is_none());
+
+        // Auto-scan on: scan, then the chained preview.
+        app.state.settings.auto_scan = true;
+        app.handle_dir_pick(&ctx, Some(DirPick::Dialog));
+        assert!(app.state.job.is_some());
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
+        assert_eq!(app.state.plans.len(), 1);
     }
 
     #[test]
