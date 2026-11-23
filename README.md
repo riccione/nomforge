@@ -160,6 +160,9 @@ nomforge-cli rename --dir ./exports \
 
 # Remove text from filenames
 nomforge-cli rename --dir ./downloads --remove "copy" --apply
+
+# Normalize extensions (.JPG/.jpeg -> .jpg)
+nomforge-cli rename --dir ./photos --ext jpg --ext jpeg --new-ext jpg --apply
 ```
 
 ### File filtering
@@ -231,6 +234,7 @@ Additional safeguards:
 | `--suffix` | | Add a suffix |
 | `--remove` | | Remove all occurrences of text |
 | `--case` | | Transform case: `upper`, `lower`, or `title` |
+| `--new-ext` | | Change the file extension (without dot; empty removes it) |
 | `--counter-start` | | Counter starting value (default: `1`) |
 | `--counter-padding` | | Zero-padding width (default: `0`, maximum: `32`) |
 | `--counter-position` | | Counter position: `prefix`, `suffix`, or `replace` (default: `prefix`) |

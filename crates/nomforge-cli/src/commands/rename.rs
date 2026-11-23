@@ -79,13 +79,16 @@ pub fn build_rules(args: &RenameArgs) -> Result<Vec<RenameRule>> {
         });
     }
 
-    // Change Extension (if --ext is provided as a single value to change TO)
-    // Note: --ext is currently used for filtering, not extension change
-    // Extension change could be added as a separate flag later
+    // Change the file extension
+    if let Some(new_ext) = &args.new_ext {
+        rules.push(RenameRule::ChangeExtension {
+            new_ext: Some(new_ext.clone()),
+        });
+    }
 
     if rules.is_empty() {
         anyhow::bail!(
-            "No rename rules specified. Use --find, --regex, --prefix, --suffix, --remove, or --case."
+            "No rename rules specified. Use --find, --regex, --prefix, --suffix, --remove, --case, or --new-ext."
         );
     }
 
@@ -118,6 +121,7 @@ mod tests {
             suffix: None,
             remove: None,
             case: None,
+            new_ext: None,
             counter_start: None,
             counter_padding: None,
             counter_position: "prefix".into(),
@@ -343,6 +347,32 @@ mod tests {
     fn build_rules_no_rules_errors() {
         let args = default_args();
         assert!(build_rules(&args).is_err());
+    }
+
+    #[test]
+    fn build_rules_change_extension() {
+        let args = RenameArgs {
+            new_ext: Some("jpg".into()),
+            ..default_args()
+        };
+        let rules = build_rules(&args).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(
+            matches!(&rules[0], RenameRule::ChangeExtension { new_ext: Some(ext) } if ext == "jpg")
+        );
+    }
+
+    #[test]
+    fn build_rules_change_extension_empty_removes_it() {
+        let args = RenameArgs {
+            new_ext: Some(String::new()),
+            ..default_args()
+        };
+        let rules = build_rules(&args).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(
+            matches!(&rules[0], RenameRule::ChangeExtension { new_ext: Some(ext) } if ext.is_empty())
+        );
     }
 
     #[test]
