@@ -35,77 +35,81 @@ pub fn show(ui: &mut egui::Ui, state: &State) {
     // Show plans (preview mode)
     if !state.plans.is_empty() {
         ui.heading("Preview");
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("preview_grid")
-                .striped(true)
-                .num_columns(3)
-                .show(ui, |ui| {
-                    ui.label(egui::RichText::new("FILE").strong());
-                    ui.label(egui::RichText::new("NEW NAME").strong());
-                    ui.label(egui::RichText::new("").strong());
-                    ui.end_row();
-
-                    for plan in &state.plans {
-                        let source = display_name(&plan.source);
-                        let target = display_name(&plan.target);
-
-                        if plan.source == plan.target {
-                            ui.label(source);
-                            ui.label(egui::RichText::new("(no change)").weak());
-                            ui.label("");
-                        } else {
-                            ui.label(source);
-                            ui.label(target);
-                            ui.label(egui::RichText::new("->").weak());
-                        }
+        egui::ScrollArea::vertical()
+            .id_salt("preview_scroll")
+            .show(ui, |ui| {
+                egui::Grid::new("preview_grid")
+                    .striped(true)
+                    .num_columns(3)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("FILE").strong());
+                        ui.label(egui::RichText::new("NEW NAME").strong());
+                        ui.label(egui::RichText::new("").strong());
                         ui.end_row();
-                    }
-                });
-        });
+
+                        for plan in &state.plans {
+                            let source = display_name(&plan.source);
+                            let target = display_name(&plan.target);
+
+                            if plan.source == plan.target {
+                                ui.label(source);
+                                ui.label(egui::RichText::new("(no change)").weak());
+                                ui.label("");
+                            } else {
+                                ui.label(source);
+                                ui.label(target);
+                                ui.label(egui::RichText::new("->").weak());
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
     }
 
     // Show results (after apply)
     if !state.results.is_empty() {
         ui.heading("Results");
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("results_grid")
-                .striped(true)
-                .num_columns(3)
-                .show(ui, |ui| {
-                    ui.label(egui::RichText::new("FILE").strong());
-                    ui.label(egui::RichText::new("NEW NAME").strong());
-                    ui.label(egui::RichText::new("STATUS").strong());
-                    ui.end_row();
-
-                    for result in &state.results {
-                        let source = display_name(&result.source);
-                        let target = display_name(&result.target);
-
-                        if result.source == result.target {
-                            ui.label(source);
-                            ui.label(egui::RichText::new("(no change)").weak());
-                            ui.label(egui::RichText::new("unchanged").weak());
-                        } else if result.success {
-                            ui.label(source);
-                            ui.label(target);
-                            ui.label(
-                                egui::RichText::new("ok")
-                                    .strong()
-                                    .color(egui::Color32::GREEN),
-                            );
-                        } else {
-                            ui.label(source);
-                            ui.label(target);
-                            ui.label(
-                                egui::RichText::new("FAILED")
-                                    .strong()
-                                    .color(egui::Color32::RED),
-                            );
-                        }
+        egui::ScrollArea::vertical()
+            .id_salt("results_scroll")
+            .show(ui, |ui| {
+                egui::Grid::new("results_grid")
+                    .striped(true)
+                    .num_columns(3)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("FILE").strong());
+                        ui.label(egui::RichText::new("NEW NAME").strong());
+                        ui.label(egui::RichText::new("STATUS").strong());
                         ui.end_row();
-                    }
-                });
-        });
+
+                        for result in &state.results {
+                            let source = display_name(&result.source);
+                            let target = display_name(&result.target);
+
+                            if result.source == result.target {
+                                ui.label(source);
+                                ui.label(egui::RichText::new("(no change)").weak());
+                                ui.label(egui::RichText::new("unchanged").weak());
+                            } else if result.success {
+                                ui.label(source);
+                                ui.label(target);
+                                ui.label(
+                                    egui::RichText::new("ok")
+                                        .strong()
+                                        .color(egui::Color32::GREEN),
+                                );
+                            } else {
+                                ui.label(source);
+                                ui.label(target);
+                                ui.label(
+                                    egui::RichText::new("FAILED")
+                                        .strong()
+                                        .color(egui::Color32::RED),
+                                );
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
     }
 }
 
@@ -136,5 +140,36 @@ mod tests {
         let path = PathBuf::from(OsStr::from_bytes(b"bad\xFF.txt"));
         let name = display_name(&path);
         assert!(name.contains('\u{FFFD}'), "name: {name:?}");
+    }
+
+    #[test]
+    fn preview_and_results_tables_do_not_clash() {
+        let ctx = egui::Context::default();
+        let state = State {
+            plans: vec![nomforge_core::RenamePlan {
+                source: PathBuf::from("/tmp/a.txt"),
+                target: PathBuf::from("/tmp/b.txt"),
+            }],
+            results: vec![nomforge_core::RenameResult {
+                source: PathBuf::from("/tmp/a.txt"),
+                target: PathBuf::from("/tmp/b.txt"),
+                success: true,
+                error: None,
+            }],
+            ..Default::default()
+        };
+
+        // Both tables render in the same pass after an apply; egui paints
+        // ID-clash warnings as debug text into the frame output.
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, &state));
+        let clash = output.shapes.iter().any(|clipped| {
+            matches!(
+                &clipped.shape,
+                egui::epaint::Shape::Text(text) if text.galley.job.text.contains("First use of")
+            )
+        });
+        output.drop_without_applying_deltas();
+
+        assert!(!clash, "preview and results tables share widget IDs");
     }
 }
