@@ -1,3 +1,44 @@
+## [0.5.1] - 2026-11-23
+
+### Bug Fixes
+
+- *(core)* Serialize rename rules with adjacent tagging
+- *(gui)* Keep undo confirmation visible after preview refresh
+- *(core)* Return an empty plan for empty input
+- *(gui)* Give preview and results scroll areas unique ids
+- *(gui)* Stretch preview tables to the available width
+
+### Documentation
+
+- *(readme)* Mention automatic scan
+- *(readme)* Mention Enter preview shortcut
+
+### Features
+
+- *(gui)* Auto-scan directory on selection
+- *(gui)* Show preview automatically after a scan
+- *(cli)* Add --new-ext extension change flag
+- *(gui)* Preview on Enter in input fields
+
+### Miscellaneous Tasks
+
+- *(gui)* Remove unused rule card and badge variants
+- Ignore local demo_photos directory
+
+### Performance
+
+- *(gui)* Replace icon font with text settings button
+- *(core)* Trim chrono default features
+- Tighten release profile
+
+### Refactor
+
+- *(gui)* Share plan job setup between preview and apply
+- *(cli)* Dedupe output tables and fix column widths
+
+### Testing
+
+- *(gui)* Pin renamed count excluding unchanged entries
 ## [0.5.0] - 2026-11-21
 
 ### Bug Fixes
@@ -45,6 +86,8 @@
 - Drop homepage metadata redundant with repository
 - Update SHA hash of reusable workflows
 - *(release)* Customize pre-release commit message format
+- *(release)* Update CHANGELOG.md for v0.5.0
+- Release nomforge version 0.5.0
 
 ### Performance
 
