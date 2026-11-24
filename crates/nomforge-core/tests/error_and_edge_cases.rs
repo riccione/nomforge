@@ -1,6 +1,6 @@
 mod common;
 
-use nomforge_core::{RenameEngine, RenameRule, ScanOptions, scan_files};
+use nomforge_core::{NomforgeError, RenameEngine, RenameRule, ScanOptions, scan_files};
 
 // Test 1: an empty file list yields an empty plan
 #[test]
@@ -39,8 +39,11 @@ fn error_invalid_include_regex() {
         include_pattern: Some(r"[invalid".into()),
         ..Default::default()
     };
-    let result = scan_files(tmp.path(), &options);
-    assert!(result.is_err());
+    let err = scan_files(tmp.path(), &options).unwrap_err();
+    assert!(
+        matches!(&err, NomforgeError::InvalidRegex { pattern, .. } if pattern == r"[invalid"),
+        "err: {err}"
+    );
 }
 
 // Test 4: scan with invalid exclude regex returns error
@@ -51,8 +54,11 @@ fn error_invalid_exclude_regex() {
         exclude_pattern: Some(r"(unclosed".into()),
         ..Default::default()
     };
-    let result = scan_files(tmp.path(), &options);
-    assert!(result.is_err());
+    let err = scan_files(tmp.path(), &options).unwrap_err();
+    assert!(
+        matches!(&err, NomforgeError::InvalidRegex { pattern, .. } if pattern == r"(unclosed"),
+        "err: {err}"
+    );
 }
 
 // Test 5: apply with no-op (source == target) succeeds

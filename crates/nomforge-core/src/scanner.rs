@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use walkdir::WalkDir;
 
-use crate::error::Result;
+use crate::error::{NomforgeError, Result};
 
 /// Options for scanning files in a directory.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -54,7 +54,7 @@ pub fn scan_files_with_warnings(
         .as_deref()
         .map(Regex::new)
         .transpose()
-        .map_err(|e| crate::error::NomforgeError::InvalidRegex {
+        .map_err(|e| NomforgeError::InvalidRegex {
             pattern: options.include_pattern.clone().unwrap_or_default(),
             reason: e.to_string(),
         })?;
@@ -64,7 +64,7 @@ pub fn scan_files_with_warnings(
         .as_deref()
         .map(Regex::new)
         .transpose()
-        .map_err(|e| crate::error::NomforgeError::InvalidRegex {
+        .map_err(|e| NomforgeError::InvalidRegex {
             pattern: options.exclude_pattern.clone().unwrap_or_default(),
             reason: e.to_string(),
         })?;
@@ -118,7 +118,7 @@ pub fn scan_files_with_warnings(
                 .path()
                 .extension()
                 .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| exts.iter().any(|e| e.eq_ignore_ascii_case(ext)));
+                .is_some_and(|ext| exts.iter().any(|want| want.eq_ignore_ascii_case(ext)));
             if !matches {
                 continue;
             }
@@ -134,7 +134,6 @@ pub fn scan_files_with_warnings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::NomforgeError;
     use std::fs;
 
     fn setup_test_dir(dir: &Path) {
