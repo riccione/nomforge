@@ -1,3 +1,8 @@
+//! Core library for nomforge: filesystem scanning, rename rules, planning,
+//! conflict detection, and the undo log.
+
+#![warn(missing_docs)]
+
 pub mod conflict;
 pub mod display;
 pub mod engine;
@@ -7,7 +12,6 @@ pub mod scanner;
 pub mod undo;
 
 pub use conflict::{Conflict, ConflictReason, detect_conflicts};
-pub use display::{disambiguate, truncate_stem};
 pub use engine::{RenameEngine, RenamePlan, RenameResult, apply_plans};
 pub use error::{NomforgeError, Result};
 pub use rules::{Case, RenameContext, RenameRule, SeqPosition};

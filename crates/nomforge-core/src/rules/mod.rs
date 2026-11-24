@@ -1,3 +1,5 @@
+//! Rename rules and the [`RenameContext`] passed to them.
+
 mod case_transform;
 mod counter;
 mod extension;
@@ -83,7 +85,9 @@ impl Default for RegexCache {
 /// Case transformation mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Case {
+    /// Convert to uppercase.
     Upper,
+    /// Convert to lowercase.
     Lower,
     /// Capitalize each word; remaining characters are lowercased.
     Title,
@@ -92,8 +96,11 @@ pub enum Case {
 /// Where to insert the counter in the filename.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SeqPosition {
+    /// Prepend the number to the stem.
     Prefix,
+    /// Append the number to the stem.
     Suffix,
+    /// Replace the stem with the number.
     ReplaceStem,
 }
 
@@ -104,7 +111,12 @@ pub enum SeqPosition {
 #[serde(tag = "type", content = "value")]
 pub enum RenameRule {
     /// Plain text find & replace (no regex).
-    FindReplace { find: String, replace: String },
+    FindReplace {
+        /// Literal text to find.
+        find: String,
+        /// Replacement text.
+        replace: String,
+    },
     /// Prepend text to filename stem.
     Prefix(String),
     /// Append text to filename stem.
@@ -115,15 +127,23 @@ pub enum RenameRule {
     CaseTransform(Case),
     /// Insert/replace with a sequential number.
     NumberSequence {
+        /// First number in the sequence.
         start: usize,
+        /// Minimum number of digits, zero-padded.
         padding: usize,
+        /// Where to place the number relative to the stem.
         position: SeqPosition,
     },
     /// Keep or change the file extension.
-    ChangeExtension { new_ext: Option<String> },
+    ChangeExtension {
+        /// New extension without a dot; `None` keeps it, `Some("")` removes it.
+        new_ext: Option<String>,
+    },
     /// Regex-based find & replace.
     RegexReplace {
+        /// Regex pattern to match in the stem.
         pattern: String,
+        /// Replacement string; supports `$1`, `$2`, … capture references.
         replacement: String,
     },
 }
