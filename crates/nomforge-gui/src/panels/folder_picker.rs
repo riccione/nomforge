@@ -39,8 +39,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) -> Option<DirPick> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn folder_picker_panel_compiles() {
-        // Module compiles and is usable
+    fn show_without_interaction_returns_none() {
+        let ctx = egui::Context::default();
+        let mut state = State::default();
+        let mut pick = Some(DirPick::Dialog);
+
+        ctx.run_ui(Default::default(), |ui| {
+            pick = show(ui, &mut state);
+        })
+        .drop_without_applying_deltas();
+
+        assert_eq!(pick, None);
     }
 }

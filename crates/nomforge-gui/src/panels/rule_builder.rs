@@ -161,8 +161,20 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) -> RuleBuilderOutput {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn rule_builder_panel_compiles() {
-        // Module compiles and is usable
+    fn untouched_state_reports_no_changes() {
+        let ctx = egui::Context::default();
+        let mut state = State::default();
+        let mut output = RuleBuilderOutput::default();
+
+        ctx.run_ui(Default::default(), |ui| {
+            output = show(ui, &mut state);
+        })
+        .drop_without_applying_deltas();
+
+        assert!(!output.submitted);
+        assert!(!output.changed);
     }
 }
