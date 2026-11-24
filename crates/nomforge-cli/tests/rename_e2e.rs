@@ -699,3 +699,49 @@ fn cli_new_ext_rejects_leading_dot() {
     assert!(stderr.contains("starts with a dot"), "stderr: {stderr}");
     assert_eq!(common::file_names(tmp.path()), vec!["a.txt"]);
 }
+
+// --ext accepts a comma-separated list as well as repeated flags
+#[test]
+fn cli_ext_accepts_comma_separated_values() {
+    let tmp = common::create_test_dir(&[("a.txt", "a"), ("b.jpg", "b"), ("c.png", "c")]);
+
+    let (exit_code, _, stderr) = common::run_nomforge(&[
+        "rename",
+        "--dir",
+        tmp.path().to_str().unwrap(),
+        "--ext",
+        "txt,jpg",
+        "--prefix",
+        "x_",
+        "--no-undo",
+        "--apply",
+    ]);
+
+    assert_eq!(exit_code, 0, "stderr: {stderr}");
+    assert_eq!(
+        common::file_names(tmp.path()),
+        vec!["c.png", "x_a.txt", "x_b.jpg"]
+    );
+}
+
+// Clap rejects invalid enum values, including when the rule would be unused
+#[test]
+fn cli_rejects_invalid_enum_values() {
+    let tmp = common::create_test_dir(&[("a.txt", "a")]);
+    let dir = tmp.path().to_str().unwrap();
+
+    let (exit_code, _, stderr) =
+        common::run_nomforge(&["rename", "--dir", dir, "--case", "sideways"]);
+    assert_ne!(exit_code, 0, "invalid --case must be rejected");
+    assert!(stderr.contains("sideways"), "stderr: {stderr}");
+
+    let (exit_code, _, stderr) =
+        common::run_nomforge(&["rename", "--dir", dir, "--counter-position", "sideways"]);
+    assert_ne!(
+        exit_code, 0,
+        "invalid --counter-position must be rejected even without counter flags"
+    );
+    assert!(stderr.contains("sideways"), "stderr: {stderr}");
+
+    assert_eq!(common::file_names(tmp.path()), vec!["a.txt"]);
+}

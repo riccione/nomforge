@@ -1,4 +1,6 @@
-use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+use clap::{Parser, Subcommand, ValueEnum};
 
 /// nomforge — bulk file renamer
 #[derive(Parser, Debug)]
@@ -16,12 +18,29 @@ pub enum Commands {
     Undo(UndoArgs),
 }
 
+/// Case transformation choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CaseArg {
+    Upper,
+    Lower,
+    Title,
+}
+
+/// Counter placement choice.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum CounterPositionArg {
+    #[default]
+    Prefix,
+    Suffix,
+    Replace,
+}
+
 /// Arguments for the rename command.
 #[derive(Parser, Debug)]
 pub struct RenameArgs {
     /// Target directory to scan
     #[arg(short, long)]
-    pub dir: String,
+    pub dir: PathBuf,
 
     /// Plain text to find in filename
     #[arg(long)]
@@ -52,8 +71,8 @@ pub struct RenameArgs {
     pub remove: Option<String>,
 
     /// Transform case: upper, lower, title
-    #[arg(long)]
-    pub case: Option<String>,
+    #[arg(long, value_enum, ignore_case = true)]
+    pub case: Option<CaseArg>,
 
     /// Change the file extension (without dot; empty string removes it)
     #[arg(long)]
@@ -68,8 +87,8 @@ pub struct RenameArgs {
     pub counter_padding: Option<usize>,
 
     /// Counter position: prefix, suffix, replace
-    #[arg(long, default_value = "prefix")]
-    pub counter_position: String,
+    #[arg(long, value_enum, ignore_case = true, default_value = "prefix")]
+    pub counter_position: CounterPositionArg,
 
     /// Filter by file extension (repeatable or comma-separated)
     #[arg(short, long, value_delimiter = ',')]
@@ -106,7 +125,7 @@ pub struct RenameArgs {
 
     /// Custom undo log file path
     #[arg(long)]
-    pub history_file: Option<String>,
+    pub history_file: Option<PathBuf>,
 
     /// Show detailed output
     #[arg(short, long)]
@@ -118,7 +137,7 @@ pub struct RenameArgs {
 pub struct UndoArgs {
     /// Custom undo log file path
     #[arg(long)]
-    pub history_file: Option<String>,
+    pub history_file: Option<PathBuf>,
 }
 
 #[cfg(test)]
@@ -145,9 +164,40 @@ mod tests {
     }
 
     #[test]
+    fn case_accepts_uppercase_input() {
+        let cli =
+            Cli::try_parse_from(["nomforge", "rename", "--dir", ".", "--case", "UPPER"]).unwrap();
+
+        match cli.command {
+            Commands::Rename(args) => assert_eq!(args.case, Some(CaseArg::Upper)),
+            _ => panic!("expected rename command"),
+        }
+    }
+
+    #[test]
+    fn invalid_enum_values_are_rejected_at_parse() {
+        assert!(
+            Cli::try_parse_from(["nomforge", "rename", "--dir", ".", "--case", "sideways"])
+                .is_err()
+        );
+        // Also rejected when no counter flags are given.
+        assert!(
+            Cli::try_parse_from([
+                "nomforge",
+                "rename",
+                "--dir",
+                ".",
+                "--counter-position",
+                "sideways",
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
     fn rename_args_defaults() {
         let args = RenameArgs {
-            dir: ".".into(),
+            dir: PathBuf::from("."),
             find: None,
             replace: None,
             regex: None,
@@ -159,7 +209,7 @@ mod tests {
             new_ext: None,
             counter_start: None,
             counter_padding: None,
-            counter_position: "prefix".into(),
+            counter_position: CounterPositionArg::Prefix,
             ext: None,
             include: None,
             exclude: None,

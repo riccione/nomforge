@@ -4,8 +4,7 @@ use colored::Colorize;
 pub fn run(args: &args::UndoArgs) -> anyhow::Result<()> {
     let history_path = args
         .history_file
-        .as_deref()
-        .map(std::path::PathBuf::from)
+        .clone()
         .unwrap_or_else(nomforge_core::default_undo_log_path);
 
     let count = nomforge_core::undo_count(&history_path)?;
