@@ -1,18 +1,14 @@
 use eframe::egui;
 
-use crate::state::State;
+use crate::state::{State, StatusKind};
 use crate::widgets::conflict_badge;
 
-/// Color for a status message based on its content.
-fn status_color(status: &str) -> Option<egui::Color32> {
-    if status.contains("error") || status.contains("Error") || status.contains("FAILED") {
-        Some(egui::Color32::RED)
-    } else if status.contains("Found") || status.contains("ok") || status.contains("Renamed") {
-        Some(egui::Color32::GREEN)
-    } else if status.contains("Ready") {
-        Some(egui::Color32::GRAY)
-    } else {
-        None
+/// Color for a status message based on its severity.
+fn status_color(kind: StatusKind) -> Option<egui::Color32> {
+    match kind {
+        StatusKind::Info => None,
+        StatusKind::Success => Some(egui::Color32::GREEN),
+        StatusKind::Error => Some(egui::Color32::RED),
     }
 }
 
@@ -45,7 +41,7 @@ pub fn show(ui: &mut egui::Ui, state: &State) {
     ui.horizontal(|ui| {
         // Status message with color based on content
         let mut status = egui::RichText::new(&state.status);
-        if let Some(color) = status_color(&state.status) {
+        if let Some(color) = status_color(state.status_kind) {
             status = status.color(color);
         }
         ui.label(status);
@@ -90,16 +86,13 @@ mod tests {
     }
 
     #[test]
-    fn status_color_matches_message_kind() {
-        assert_eq!(status_color("Scan error: denied"), Some(egui::Color32::RED));
-        assert_eq!(status_color("FAILED to rename"), Some(egui::Color32::RED));
-        assert_eq!(status_color("Found 3 file(s)"), Some(egui::Color32::GREEN));
+    fn status_color_matches_kind() {
+        assert_eq!(status_color(StatusKind::Error), Some(egui::Color32::RED));
         assert_eq!(
-            status_color("Renamed 2 file(s)"),
+            status_color(StatusKind::Success),
             Some(egui::Color32::GREEN)
         );
-        assert_eq!(status_color("Ready"), Some(egui::Color32::GRAY));
-        assert_eq!(status_color("Planning…"), None);
+        assert_eq!(status_color(StatusKind::Info), None);
     }
 
     #[test]

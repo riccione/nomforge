@@ -74,8 +74,20 @@ pub struct State {
     /// Status message.
     pub status: String,
 
+    /// Severity of the status message.
+    pub status_kind: StatusKind,
+
     /// Whether a rename has been applied.
     pub applied: bool,
+}
+
+/// Severity of the current status message.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StatusKind {
+    #[default]
+    Info,
+    Success,
+    Error,
 }
 
 /// Result of a completed scan, reused for rule-only live previews.
@@ -126,6 +138,7 @@ impl Default for State {
             plans: Vec::new(),
             results: Vec::new(),
             status: String::from("Ready"),
+            status_kind: StatusKind::Info,
             applied: false,
         }
     }
@@ -240,6 +253,12 @@ impl State {
         self.show_settings_modal = true;
     }
 
+    /// Replace the status message and its severity.
+    pub fn set_status(&mut self, kind: StatusKind, message: impl Into<String>) {
+        self.status = message.into();
+        self.status_kind = kind;
+    }
+
     /// Reset results and plans.
     pub fn reset_output(&mut self) {
         self.files.clear();
@@ -248,7 +267,7 @@ impl State {
         self.pending_conflicts.clear();
         self.show_conflict_modal = false;
         self.applied = false;
-        self.status = "Ready".into();
+        self.set_status(StatusKind::Info, "Ready");
     }
 }
 
@@ -464,6 +483,7 @@ mod tests {
         assert!(!state.show_conflict_modal);
         assert!(!state.applied);
         assert_eq!(state.status, "Ready");
+        assert_eq!(state.status_kind, StatusKind::Info);
     }
 
     #[test]
