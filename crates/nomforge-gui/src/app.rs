@@ -5,7 +5,7 @@ use nomforge_core::{RenameRule, ScanOptions};
 
 use crate::job::{self, Job, JobOutcome, ScanRequest};
 use crate::panels::folder_picker::DirPick;
-use crate::state::{ScanCache, State};
+use crate::state::{ScanCache, State, StatusKind};
 
 /// Debounce before a live preview refresh, in seconds.
 const LIVE_PREVIEW_DEBOUNCE: f64 = 0.3;
@@ -193,7 +193,10 @@ impl NomforgeApp {
         match std::fs::canonicalize(&self.state.dir) {
             Ok(dir) => Some(dir),
             Err(e) => {
-                self.state.status = format!("Cannot resolve directory {}: {e}", self.state.dir);
+                self.state.set_status(
+                    StatusKind::Error,
+                    format!("Cannot resolve directory {}: {e}", self.state.dir),
+                );
                 None
             }
         }
@@ -277,7 +280,8 @@ impl NomforgeApp {
         let rules = match self.state.build_rules() {
             Ok(rules) => rules,
             Err(e) => {
-                self.state.status = format!("Rule error: {e}");
+                self.state
+                    .set_status(StatusKind::Error, format!("Rule error: {e}"));
                 return;
             }
         };
@@ -285,7 +289,7 @@ impl NomforgeApp {
         match cached {
             Some((files, skipped)) => {
                 self.state.reset_output();
-                self.state.status = "Planning\u{2026}".into();
+                self.state.set_status(StatusKind::Info, "Planning\u{2026}");
                 self.spawn(ctx, move || {
                     JobOutcome::Preview(job::preview_files(files, rules, skipped))
                 });
@@ -311,14 +315,18 @@ impl NomforgeApp {
         // `reset_output` sets the status to "Ready"; preserve it when the
         // caller wants a quiet preparation (e.g. the post-undo refresh).
         let previous_status = self.state.status.clone();
+        let previous_kind = self.state.status_kind;
         self.state.reset_output();
 
         let dir = self.resolve_dir()?;
         let options = self.state.build_scan_options();
-        self.state.status = match status {
-            Some(status) => status.into(),
-            None => previous_status,
-        };
+        match status {
+            Some(status) => self.state.set_status(StatusKind::Info, status),
+            None => {
+                self.state.status = previous_status;
+                self.state.status_kind = previous_kind;
+            }
+        }
         Some((dir, options))
     }
 
@@ -329,7 +337,8 @@ impl NomforgeApp {
         let rules = match self.state.build_rules() {
             Ok(rules) => rules,
             Err(e) => {
-                self.state.status = format!("Rule error: {e}");
+                self.state
+                    .set_status(StatusKind::Error, format!("Rule error: {e}"));
                 return None;
             }
         };
@@ -386,9 +395,11 @@ impl NomforgeApp {
     /// Refresh plans after an undo while keeping the undo confirmation visible.
     fn preview_after_undo(&mut self, ctx: &egui::Context) {
         let undo_status = self.state.status.clone();
+        let undo_kind = self.state.status_kind;
         let Some(work) = self.prepare_plan(None) else {
             // Keep the confirmation even if the refresh cannot start.
             self.state.status = undo_status;
+            self.state.status_kind = undo_kind;
             return;
         };
         let scan = ScanRequest {
@@ -407,7 +418,7 @@ impl NomforgeApp {
         self.state.live_preview_at = None;
 
         let history = self.history_path();
-        self.state.status = "Undoing\u{2026}".into();
+        self.state.set_status(StatusKind::Info, "Undoing\u{2026}");
         self.spawn(ctx, move || JobOutcome::Undo(job::undo(&history)));
     }
 
@@ -437,7 +448,7 @@ impl NomforgeApp {
         self.state.live_preview_at = None;
 
         let history = self.undo_log_target();
-        self.state.status = "Applying\u{2026}".into();
+        self.state.set_status(StatusKind::Info, "Applying\u{2026}");
         self.spawn(ctx, move || {
             JobOutcome::Apply(Ok(job::apply_confirmed(plans, history, 0)))
         });
@@ -484,7 +495,8 @@ impl NomforgeApp {
             Err(std::sync::mpsc::TryRecvError::Empty) => return,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.state.job = None;
-                self.state.status = "Background job failed".into();
+                self.state
+                    .set_status(StatusKind::Error, "Background job failed");
                 return;
             }
         };
@@ -525,14 +537,16 @@ impl NomforgeApp {
                             JobOutcome::Preview(job::preview_files(files, rules, skipped))
                         });
                     }
-                    Err(e) => self.state.status = format!("Rule error: {e}"),
+                    Err(e) => self
+                        .state
+                        .set_status(StatusKind::Error, format!("Rule error: {e}")),
                 }
             }
             JobOutcome::Scan(Err(message)) => {
                 if scan.is_some() {
                     self.state.scan_cache = None;
                 }
-                self.state.status = message;
+                self.state.set_status(StatusKind::Error, message);
             }
             JobOutcome::Preview(Ok(data)) => {
                 if let Some(scan) = scan {
@@ -545,15 +559,18 @@ impl NomforgeApp {
                 }
                 if data.plans.is_empty() {
                     if !keep_status {
-                        self.state.status = "No files found".into();
+                        self.state.set_status(StatusKind::Info, "No files found");
                     }
                     return;
                 }
                 if !keep_status {
-                    self.state.status = format!(
-                        "{} file(s) to rename{}",
-                        data.plans.len(),
-                        skipped_suffix(data.skipped)
+                    self.state.set_status(
+                        StatusKind::Info,
+                        format!(
+                            "{} file(s) to rename{}",
+                            data.plans.len(),
+                            skipped_suffix(data.skipped)
+                        ),
                     );
                 }
                 self.state.pending_conflicts = data.conflicts;
@@ -563,22 +580,25 @@ impl NomforgeApp {
                 if scan.is_some() {
                     self.state.scan_cache = None;
                 }
-                self.state.status = message;
+                self.state.set_status(StatusKind::Error, message);
             }
             JobOutcome::Apply(Ok(data)) => {
                 // Files changed on disk; the cached scan is no longer valid.
                 self.state.scan_cache = None;
                 if data.plans.is_empty() {
-                    self.state.status = "No files found".into();
+                    self.state.set_status(StatusKind::Info, "No files found");
                     return;
                 }
                 if !data.conflicts.is_empty() {
                     self.state.pending_conflicts = data.conflicts;
                     self.state.show_conflict_modal = true;
-                    self.state.status = format!(
-                        "{} conflict(s) detected \u{2014} review before applying{}",
-                        self.state.pending_conflicts.len(),
-                        skipped_suffix(data.skipped)
+                    self.state.set_status(
+                        StatusKind::Info,
+                        format!(
+                            "{} conflict(s) detected \u{2014} review before applying{}",
+                            self.state.pending_conflicts.len(),
+                            skipped_suffix(data.skipped)
+                        ),
                     );
                     self.state.plans = data.plans;
                     return;
@@ -589,27 +609,43 @@ impl NomforgeApp {
                     .iter()
                     .filter(|r| r.success && r.source != r.target)
                     .count();
-                self.state.status = match data.undo_error {
-                    Some(e) => format!("Renamed {renamed} file(s) (undo log error: {e})"),
-                    None => format!("Renamed {renamed} file(s){}", skipped_suffix(data.skipped)),
-                };
+                match data.undo_error {
+                    Some(e) => self.state.set_status(
+                        StatusKind::Error,
+                        format!("Renamed {renamed} file(s) (undo log error: {e})"),
+                    ),
+                    None => self.state.set_status(
+                        StatusKind::Success,
+                        format!("Renamed {renamed} file(s){}", skipped_suffix(data.skipped)),
+                    ),
+                }
                 self.state.plans = data.plans;
                 self.state.results = data.results;
                 self.state.applied = true;
             }
-            JobOutcome::Apply(Err(message)) => self.state.status = message,
+            JobOutcome::Apply(Err(message)) => {
+                self.state.set_status(StatusKind::Error, message);
+            }
             JobOutcome::Undo(Ok((reverted, skipped))) => {
                 self.state.scan_cache = None;
-                self.state.status = if skipped > 0 {
+                let message = if skipped > 0 {
                     format!("Reverted {reverted} file(s), skipped {skipped} existing")
                 } else {
                     format!("Reverted {reverted} file(s)")
                 };
+                self.state.set_status(StatusKind::Success, message);
                 // Refresh the preview against the restored files without
                 // overwriting the undo confirmation.
                 self.preview_after_undo(ctx);
             }
-            JobOutcome::Undo(Err(message)) => self.state.status = message,
+            JobOutcome::Undo(Err(message)) => {
+                let kind = if message == "No undo history found" {
+                    StatusKind::Info
+                } else {
+                    StatusKind::Error
+                };
+                self.state.set_status(kind, message);
+            }
         }
     }
 
@@ -655,7 +691,7 @@ impl NomforgeApp {
                 if ui.button("Cancel").clicked() {
                     self.state.show_conflict_modal = false;
                     self.state.pending_conflicts.clear();
-                    self.state.status = "Apply cancelled".into();
+                    self.state.set_status(StatusKind::Info, "Apply cancelled");
                 }
             });
         });
@@ -768,6 +804,7 @@ mod tests {
         // The undo confirmation survives the refresh job, which still
         // repopulates the plans.
         assert_eq!(app.state.status, "Reverted 2 file(s)");
+        assert_eq!(app.state.status_kind, StatusKind::Success);
         assert_eq!(app.state.plans.len(), 2);
 
         // Verify files are restored
@@ -910,6 +947,7 @@ mod tests {
 
         assert!(dir.join("x_a.txt").exists());
         assert_eq!(app.state.status, "Renamed 1 file(s)");
+        assert_eq!(app.state.status_kind, StatusKind::Success);
         assert!(app.state.pending_conflicts.is_empty());
         assert!(!app.state.show_conflict_modal);
     }
@@ -1033,6 +1071,7 @@ mod tests {
 
         assert!(app.state.plans.is_empty());
         assert_eq!(app.state.status, "No files found");
+        assert_eq!(app.state.status_kind, StatusKind::Info);
         assert_eq!(
             app.state.scan_cache.as_ref().map(|cache| cache.files.len()),
             Some(0),
@@ -1162,6 +1201,7 @@ mod tests {
         assert_eq!(app.state.plans[0].source.file_name().unwrap(), "a.txt");
         assert_eq!(app.state.plans[0].target.file_name().unwrap(), "x_a.txt");
         assert_eq!(app.state.status, "1 file(s) to rename");
+        assert_eq!(app.state.status_kind, StatusKind::Info);
         assert!(app.state.pending_conflicts.is_empty());
     }
 
@@ -1218,6 +1258,7 @@ mod tests {
                 "{action} status: {}",
                 app.state.status
             );
+            assert_eq!(app.state.status_kind, StatusKind::Error);
             assert!(dir.join("a.txt").exists(), "{action} renamed a file");
         }
     }

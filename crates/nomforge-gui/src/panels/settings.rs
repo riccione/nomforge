@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use crate::settings::{self, MAX_FONT_SIZE, MIN_FONT_SIZE, ThemeSetting};
-use crate::state::State;
+use crate::state::{State, StatusKind};
 
 /// Render the settings modal (if open).
 ///
@@ -118,6 +118,6 @@ fn commit_font_size(ctx: &egui::Context, state: &mut State, size: f32) {
 /// Persist the current settings, reporting failures in the status bar.
 fn persist(state: &mut State) {
     if let Err(e) = settings::save(&state.settings) {
-        state.status = format!("Settings save error: {e}");
+        state.set_status(StatusKind::Error, format!("Settings save error: {e}"));
     }
 }
