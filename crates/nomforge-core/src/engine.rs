@@ -1,3 +1,5 @@
+//! Rename engine: plans renames with rules and applies them to disk.
+
 use std::path::{Path, PathBuf};
 
 use crate::display::{disambiguate, truncate_stem};
@@ -7,16 +9,22 @@ use crate::rules::{RegexCache, RenameContext, RenameRule};
 /// A planned rename operation for a single file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenamePlan {
+    /// Path of the file before renaming.
     pub source: PathBuf,
+    /// Path the file will be renamed to.
     pub target: PathBuf,
 }
 
 /// Result of applying a rename plan.
 #[derive(Debug, Clone)]
 pub struct RenameResult {
+    /// Path of the file before renaming.
     pub source: PathBuf,
+    /// Path the rename targeted.
     pub target: PathBuf,
+    /// Whether the rename succeeded.
     pub success: bool,
+    /// Failure reason, if the rename did not succeed.
     pub error: Option<String>,
 }
 
@@ -27,6 +35,7 @@ pub struct RenameEngine {
 }
 
 impl RenameEngine {
+    /// Create an engine that applies `rules` in order.
     pub fn new(rules: Vec<RenameRule>) -> Self {
         let cache = RegexCache::from_rules(&rules);
         Self { rules, cache }

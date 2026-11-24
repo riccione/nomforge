@@ -1,3 +1,5 @@
+//! Filename display helpers: truncation and target disambiguation.
+
 use std::path::{Path, PathBuf};
 
 /// Maximum filename length in bytes (conservative limit across OSes).

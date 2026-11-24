@@ -1,3 +1,5 @@
+//! Directory scanning with filtering and hidden-directory pruning.
+
 use std::path::{Path, PathBuf};
 
 use regex::Regex;

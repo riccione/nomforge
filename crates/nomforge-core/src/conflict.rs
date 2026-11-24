@@ -1,3 +1,5 @@
+//! Conflict detection between planned renames.
+
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -6,8 +8,11 @@ use crate::engine::RenamePlan;
 /// A conflict detected between two rename plans.
 #[derive(Debug, Clone)]
 pub struct Conflict {
+    /// Index of the first plan involved in the conflict.
     pub plan_a: usize,
+    /// Index of the second plan involved in the conflict.
     pub plan_b: usize,
+    /// Why the two plans conflict.
     pub reason: ConflictReason,
 }
 

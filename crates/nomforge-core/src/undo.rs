@@ -1,3 +1,5 @@
+//! Persistent undo history for applied rename batches.
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -11,24 +13,30 @@ use crate::error::{NomforgeError, Result};
 /// A single rename operation in the undo log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UndoEntry {
+    /// Original path before the rename.
     pub source: PathBuf,
+    /// Path the file was renamed to.
     pub target: PathBuf,
 }
 
 /// A batch of rename operations that can be undone together.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UndoBatch {
+    /// When the batch was applied.
     pub timestamp: DateTime<Utc>,
+    /// Renames in the batch, in application order.
     pub operations: Vec<UndoEntry>,
 }
 
 /// The undo log containing all rename batches.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UndoLog {
+    /// Batches in chronological order; the newest batch is last.
     pub batches: Vec<UndoBatch>,
 }
 
 impl UndoLog {
+    /// Create an empty undo log.
     pub fn new() -> Self {
         Self {
             batches: Vec::new(),
