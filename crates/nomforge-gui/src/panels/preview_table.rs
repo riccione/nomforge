@@ -9,6 +9,9 @@ use crate::state::State;
 const STATUS_WIDTH: f32 = 88.0;
 /// Minimum width for each filename column.
 const MIN_NAME_WIDTH: f32 = 80.0;
+/// Maximum number of detail lines (conflicts, failures) rendered before
+/// summarizing the rest.
+const MAX_DETAIL_ROWS: usize = 50;
 
 /// File name for display, borrowing when the path is valid UTF-8.
 fn display_name(path: &Path) -> Cow<'_, str> {
@@ -35,6 +38,18 @@ impl Columns {
             row_height: ui.spacing().interact_size.y,
         }
     }
+}
+
+/// Zebra background for a virtualized row.
+fn zebra_frame(ui: &egui::Ui, row: usize) -> egui::Frame {
+    let fill = if row.is_multiple_of(2) {
+        ui.visuals().faint_bg_color
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    egui::Frame::new()
+        .fill(fill)
+        .inner_margin(egui::Margin::ZERO)
 }
 
 /// A filename cell that truncates with an ellipsis and shows the full name on hover.
@@ -67,10 +82,19 @@ pub fn show(ui: &mut egui::Ui, state: &State) {
                 state.pending_conflicts.len()
             ),
         );
-        for conflict in &state.pending_conflicts {
+        for conflict in state.pending_conflicts.iter().take(MAX_DETAIL_ROWS) {
             ui.label(
                 egui::RichText::new(format!("  • {}", conflict.reason))
                     .color(egui::Color32::from_rgb(255, 165, 0)),
+            );
+        }
+        if state.pending_conflicts.len() > MAX_DETAIL_ROWS {
+            ui.label(
+                egui::RichText::new(format!(
+                    "  … and {} more",
+                    state.pending_conflicts.len() - MAX_DETAIL_ROWS
+                ))
+                .color(egui::Color32::from_rgb(255, 165, 0)),
             );
         }
         ui.separator();
@@ -79,35 +103,42 @@ pub fn show(ui: &mut egui::Ui, state: &State) {
     // Show plans (preview mode)
     if !state.plans.is_empty() {
         ui.heading("Preview");
+        let row_height = ui.spacing().interact_size.y;
+
         egui::ScrollArea::vertical()
             .id_salt("preview_scroll")
             .auto_shrink([false, true])
-            .show(ui, |ui| {
+            .show_rows(ui, row_height, state.plans.len() + 1, |ui, rows| {
                 let columns = Columns::new(ui);
 
-                egui::Grid::new("preview_grid")
-                    .striped(true)
-                    .num_columns(3)
-                    .show(ui, |ui| {
-                        text_cell(
-                            ui,
-                            columns.name,
-                            &columns,
-                            egui::RichText::new("FILE").strong(),
-                        );
-                        text_cell(
-                            ui,
-                            columns.name,
-                            &columns,
-                            egui::RichText::new("NEW NAME").strong(),
-                        );
-                        text_cell(ui, columns.status, &columns, "");
-                        ui.end_row();
+                for row in rows {
+                    if row == 0 {
+                        zebra_frame(ui, row).show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                text_cell(
+                                    ui,
+                                    columns.name,
+                                    &columns,
+                                    egui::RichText::new("FILE").strong(),
+                                );
+                                text_cell(
+                                    ui,
+                                    columns.name,
+                                    &columns,
+                                    egui::RichText::new("NEW NAME").strong(),
+                                );
+                                text_cell(ui, columns.status, &columns, "");
+                            });
+                        });
+                        continue;
+                    }
 
-                        for plan in &state.plans {
-                            let source = display_name(&plan.source);
-                            let target = display_name(&plan.target);
+                    let plan = &state.plans[row - 1];
+                    let source = display_name(&plan.source);
+                    let target = display_name(&plan.target);
 
+                    zebra_frame(ui, row).show(ui, |ui| {
+                        ui.horizontal(|ui| {
                             if plan.source == plan.target {
                                 name_cell(ui, &columns, &source);
                                 text_cell(
@@ -127,49 +158,56 @@ pub fn show(ui: &mut egui::Ui, state: &State) {
                                     egui::RichText::new("->").weak(),
                                 );
                             }
-                            ui.end_row();
-                        }
+                        });
                     });
+                }
             });
     }
 
     // Show results (after apply)
     if !state.results.is_empty() {
         ui.heading("Results");
+        let row_height = ui.spacing().interact_size.y;
+
         egui::ScrollArea::vertical()
             .id_salt("results_scroll")
             .auto_shrink([false, true])
-            .show(ui, |ui| {
+            .show_rows(ui, row_height, state.results.len() + 1, |ui, rows| {
                 let columns = Columns::new(ui);
 
-                egui::Grid::new("results_grid")
-                    .striped(true)
-                    .num_columns(3)
-                    .show(ui, |ui| {
-                        text_cell(
-                            ui,
-                            columns.name,
-                            &columns,
-                            egui::RichText::new("FILE").strong(),
-                        );
-                        text_cell(
-                            ui,
-                            columns.name,
-                            &columns,
-                            egui::RichText::new("NEW NAME").strong(),
-                        );
-                        text_cell(
-                            ui,
-                            columns.status,
-                            &columns,
-                            egui::RichText::new("STATUS").strong(),
-                        );
-                        ui.end_row();
+                for row in rows {
+                    if row == 0 {
+                        zebra_frame(ui, row).show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                text_cell(
+                                    ui,
+                                    columns.name,
+                                    &columns,
+                                    egui::RichText::new("FILE").strong(),
+                                );
+                                text_cell(
+                                    ui,
+                                    columns.name,
+                                    &columns,
+                                    egui::RichText::new("NEW NAME").strong(),
+                                );
+                                text_cell(
+                                    ui,
+                                    columns.status,
+                                    &columns,
+                                    egui::RichText::new("STATUS").strong(),
+                                );
+                            });
+                        });
+                        continue;
+                    }
 
-                        for result in &state.results {
-                            let source = display_name(&result.source);
-                            let target = display_name(&result.target);
+                    let result = &state.results[row - 1];
+                    let source = display_name(&result.source);
+                    let target = display_name(&result.target);
 
+                    zebra_frame(ui, row).show(ui, |ui| {
+                        ui.horizontal(|ui| {
                             if result.source == result.target {
                                 name_cell(ui, &columns, &source);
                                 text_cell(
@@ -207,33 +245,39 @@ pub fn show(ui: &mut egui::Ui, state: &State) {
                                         .color(egui::Color32::RED),
                                 );
                                 if let Some(err) = &result.error {
-                                    status.on_hover_text(err);
+                                    let _ = status.on_hover_text(err);
                                 }
                             }
-                            ui.end_row();
-                        }
+                        });
                     });
-
-                // Failure details would not fit in the status column, so list
-                // them at full width below the table.
-                let failures: Vec<(String, String)> = state
-                    .results
-                    .iter()
-                    .filter_map(|result| {
-                        result
-                            .error
-                            .as_ref()
-                            .map(|err| (display_name(&result.source).into_owned(), err.clone()))
-                    })
-                    .collect();
-                for (source, err) in failures {
-                    let text = format!("⚠ {source}: {err}");
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(text.clone()).color(egui::Color32::RED),
-                    ))
-                    .on_hover_text(text);
                 }
             });
+
+        // Failure details would not fit in the status column, so list them at
+        // full width below the table.
+        let failures: Vec<(String, String)> = state
+            .results
+            .iter()
+            .filter_map(|result| {
+                result
+                    .error
+                    .as_ref()
+                    .map(|err| (display_name(&result.source).into_owned(), err.clone()))
+            })
+            .collect();
+        for (source, err) in failures.iter().take(MAX_DETAIL_ROWS) {
+            let text = format!("⚠ {source}: {err}");
+            ui.add(egui::Label::new(
+                egui::RichText::new(text.clone()).color(egui::Color32::RED),
+            ))
+            .on_hover_text(text);
+        }
+        if failures.len() > MAX_DETAIL_ROWS {
+            ui.label(format!(
+                "  … and {} more failure(s)",
+                failures.len() - MAX_DETAIL_ROWS
+            ));
+        }
     }
 }
 
@@ -340,5 +384,42 @@ mod tests {
 
             assert!(width >= 580.0, "table width {width} does not fill 600px");
         }
+    }
+
+    #[test]
+    fn preview_virtualizes_large_lists() {
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(600.0, 400.0),
+            )),
+            ..Default::default()
+        };
+
+        let plans = (0..10_000)
+            .map(|i| nomforge_core::RenamePlan {
+                source: PathBuf::from(format!("/tmp/file_{i}.txt")),
+                target: PathBuf::from(format!("/tmp/renamed_{i}.txt")),
+            })
+            .collect();
+        let state = State {
+            plans,
+            ..Default::default()
+        };
+
+        let output = ctx.run_ui(input, |ui| show(ui, &state));
+        let text_shapes = output
+            .shapes
+            .iter()
+            .filter(|clipped| matches!(&clipped.shape, egui::epaint::Shape::Text(_)))
+            .count();
+        output.drop_without_applying_deltas();
+
+        // Only the visible rows (plus the header) may be laid out.
+        assert!(
+            text_shapes < 500,
+            "laid out {text_shapes} text shapes for 10k rows"
+        );
     }
 }
