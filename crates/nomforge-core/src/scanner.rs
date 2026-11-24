@@ -6,7 +6,7 @@ use walkdir::WalkDir;
 use crate::error::Result;
 
 /// Options for scanning files in a directory.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ScanOptions {
     /// Scan subdirectories recursively.
     pub recursive: bool,

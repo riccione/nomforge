@@ -52,6 +52,12 @@ pub struct State {
     /// Currently running background job, if any.
     pub job: Option<crate::job::Job>,
 
+    /// Cache of the last scan, reused while only rules change.
+    pub scan_cache: Option<ScanCache>,
+
+    /// Deadline for the next live preview refresh.
+    pub live_preview_at: Option<f64>,
+
     /// Conflict detection.
     pub show_conflict_modal: bool,
     pub pending_conflicts: Vec<Conflict>,
@@ -70,6 +76,15 @@ pub struct State {
 
     /// Whether a rename has been applied.
     pub applied: bool,
+}
+
+/// Result of a completed scan, reused for rule-only live previews.
+#[derive(Debug, Clone)]
+pub struct ScanCache {
+    pub dir: PathBuf,
+    pub options: nomforge_core::ScanOptions,
+    pub files: Vec<PathBuf>,
+    pub skipped: usize,
 }
 
 impl Default for State {
@@ -103,6 +118,8 @@ impl Default for State {
             draft_font_size_input: format!("{:.0}", crate::settings::DEFAULT_FONT_SIZE),
             show_settings_modal: false,
             job: None,
+            scan_cache: None,
+            live_preview_at: None,
             show_conflict_modal: false,
             pending_conflicts: Vec::new(),
             files: Vec::new(),

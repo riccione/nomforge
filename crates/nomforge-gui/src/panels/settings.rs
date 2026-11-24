@@ -86,6 +86,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             persist(state);
         }
 
+        let mut live_preview = state.settings.live_preview;
+        if ui
+            .checkbox(&mut live_preview, "Preview while typing rules and filters")
+            .changed()
+        {
+            state.settings.live_preview = live_preview;
+            persist(state);
+        }
+
         ui.add_space(16.0);
         ui.separator();
         ui.add_space(8.0);

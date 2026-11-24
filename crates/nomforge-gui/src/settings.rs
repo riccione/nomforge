@@ -47,6 +47,9 @@ pub struct Settings {
     /// Scan the selected directory automatically.
     #[serde(default = "default_auto_scan")]
     pub auto_scan: bool,
+    /// Refresh the preview while typing rules and filters.
+    #[serde(default = "default_live_preview")]
+    pub live_preview: bool,
 }
 
 fn default_font_size() -> f32 {
@@ -57,12 +60,17 @@ fn default_auto_scan() -> bool {
     true
 }
 
+fn default_live_preview() -> bool {
+    true
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             theme: ThemeSetting::default(),
             font_size: DEFAULT_FONT_SIZE,
             auto_scan: true,
+            live_preview: true,
         }
     }
 }
@@ -140,6 +148,7 @@ mod tests {
         assert_eq!(settings.theme, ThemeSetting::System);
         assert_eq!(settings.font_size, DEFAULT_FONT_SIZE);
         assert!(settings.auto_scan);
+        assert!(settings.live_preview);
     }
 
     #[test]
@@ -148,10 +157,12 @@ mod tests {
             theme: ThemeSetting::Dark,
             font_size: 18.0,
             auto_scan: false,
+            live_preview: false,
         };
         let json = serde_json::to_string(&settings).unwrap();
         assert!(json.contains("\"dark\""), "json: {json}");
         assert!(json.contains("\"auto_scan\":false"), "json: {json}");
+        assert!(json.contains("\"live_preview\":false"), "json: {json}");
         let loaded: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded, settings);
     }
@@ -161,6 +172,7 @@ mod tests {
         let loaded: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(loaded, Settings::default());
         assert!(loaded.auto_scan, "auto-scan defaults to on");
+        assert!(loaded.live_preview, "live preview defaults to on");
     }
 
     #[test]
@@ -186,6 +198,7 @@ mod tests {
             theme: ThemeSetting::Light,
             font_size: 20.0,
             auto_scan: false,
+            live_preview: false,
         };
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
