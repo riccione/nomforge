@@ -1,3 +1,5 @@
+//! nomforge GUI: an egui/eframe frontend for the core rename engine.
+
 mod app;
 mod job;
 mod panels;
