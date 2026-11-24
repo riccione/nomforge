@@ -71,8 +71,8 @@ pub struct RenameArgs {
     #[arg(long, default_value = "prefix")]
     pub counter_position: String,
 
-    /// Filter by file extension (repeatable)
-    #[arg(short, long)]
+    /// Filter by file extension (repeatable or comma-separated)
+    #[arg(short, long, value_delimiter = ',')]
     pub ext: Option<Vec<String>>,
 
     /// Include only files matching this regex pattern
@@ -124,11 +124,24 @@ pub struct UndoArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::CommandFactory;
+    use clap::{CommandFactory, Parser};
 
     #[test]
     fn cli_structures_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn ext_accepts_comma_separated_values() {
+        let cli =
+            Cli::try_parse_from(["nomforge", "rename", "--dir", ".", "--ext", "txt,jpg"]).unwrap();
+
+        match cli.command {
+            Commands::Rename(args) => {
+                assert_eq!(args.ext, Some(vec!["txt".to_string(), "jpg".to_string()]));
+            }
+            _ => panic!("expected rename command"),
+        }
     }
 
     #[test]
