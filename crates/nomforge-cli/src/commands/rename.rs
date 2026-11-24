@@ -1,7 +1,7 @@
 use anyhow::Result;
 use nomforge_core::{Case, RenameRule, ScanOptions, SeqPosition};
 
-use crate::args::RenameArgs;
+use crate::args::{CaseArg, CounterPositionArg, RenameArgs};
 
 /// Convert CLI args into a list of rename rules.
 pub fn build_rules(args: &RenameArgs) -> Result<Vec<RenameRule>> {
@@ -48,29 +48,21 @@ pub fn build_rules(args: &RenameArgs) -> Result<Vec<RenameRule>> {
     }
 
     // Case Transform
-    if let Some(case_str) = &args.case {
-        let case = match case_str.to_lowercase().as_str() {
-            "upper" => Case::Upper,
-            "lower" => Case::Lower,
-            "title" => Case::Title,
-            _ => anyhow::bail!(
-                "Invalid case transform '{}'. Expected: upper, lower, title",
-                case_str
-            ),
+    if let Some(case) = args.case {
+        let case = match case {
+            CaseArg::Upper => Case::Upper,
+            CaseArg::Lower => Case::Lower,
+            CaseArg::Title => Case::Title,
         };
         rules.push(RenameRule::CaseTransform(case));
     }
 
     // Number Sequence (only if counter_start or counter_padding is explicitly set)
     if args.counter_start.is_some() || args.counter_padding.is_some() {
-        let position = match args.counter_position.to_lowercase().as_str() {
-            "prefix" => SeqPosition::Prefix,
-            "suffix" => SeqPosition::Suffix,
-            "replace" => SeqPosition::ReplaceStem,
-            _ => anyhow::bail!(
-                "Invalid counter position '{}'. Expected: prefix, suffix, replace",
-                args.counter_position
-            ),
+        let position = match args.counter_position {
+            CounterPositionArg::Prefix => SeqPosition::Prefix,
+            CounterPositionArg::Suffix => SeqPosition::Suffix,
+            CounterPositionArg::Replace => SeqPosition::ReplaceStem,
         };
         rules.push(RenameRule::NumberSequence {
             start: args.counter_start.unwrap_or(1),
@@ -112,7 +104,7 @@ mod tests {
 
     fn default_args() -> RenameArgs {
         RenameArgs {
-            dir: ".".into(),
+            dir: std::path::PathBuf::from("."),
             find: None,
             replace: None,
             regex: None,
@@ -124,7 +116,7 @@ mod tests {
             new_ext: None,
             counter_start: None,
             counter_padding: None,
-            counter_position: "prefix".into(),
+            counter_position: CounterPositionArg::Prefix,
             ext: None,
             include: None,
             exclude: None,
@@ -245,7 +237,7 @@ mod tests {
     #[test]
     fn build_rules_case() {
         let args = RenameArgs {
-            case: Some("upper".into()),
+            case: Some(CaseArg::Upper),
             ..default_args()
         };
         let rules = build_rules(&args).unwrap();
@@ -254,20 +246,11 @@ mod tests {
     }
 
     #[test]
-    fn build_rules_case_invalid() {
-        let args = RenameArgs {
-            case: Some("invalid".into()),
-            ..default_args()
-        };
-        assert!(build_rules(&args).is_err());
-    }
-
-    #[test]
     fn build_rules_counter() {
         let args = RenameArgs {
             counter_start: Some(1),
             counter_padding: Some(3),
-            counter_position: "prefix".into(),
+            counter_position: CounterPositionArg::Prefix,
             ..default_args()
         };
         let rules = build_rules(&args).unwrap();
@@ -286,7 +269,7 @@ mod tests {
     fn build_rules_counter_position_suffix() {
         let args = RenameArgs {
             counter_padding: Some(3),
-            counter_position: "suffix".into(),
+            counter_position: CounterPositionArg::Suffix,
             ..default_args()
         };
         let rules = build_rules(&args).unwrap();
@@ -303,7 +286,7 @@ mod tests {
     fn build_rules_counter_position_replace() {
         let args = RenameArgs {
             counter_padding: Some(3),
-            counter_position: "replace".into(),
+            counter_position: CounterPositionArg::Replace,
             ..default_args()
         };
         let rules = build_rules(&args).unwrap();
@@ -317,23 +300,13 @@ mod tests {
     }
 
     #[test]
-    fn build_rules_counter_position_invalid() {
-        let args = RenameArgs {
-            counter_padding: Some(3),
-            counter_position: "invalid".into(),
-            ..default_args()
-        };
-        assert!(build_rules(&args).is_err());
-    }
-
-    #[test]
     fn build_rules_multiple_combined() {
         let args = RenameArgs {
             prefix: Some("vacation_".into()),
-            case: Some("lower".into()),
+            case: Some(CaseArg::Lower),
             counter_start: Some(1),
             counter_padding: Some(3),
-            counter_position: "prefix".into(),
+            counter_position: CounterPositionArg::Prefix,
             ..default_args()
         };
         let rules = build_rules(&args).unwrap();
@@ -382,7 +355,7 @@ mod tests {
         let args = RenameArgs {
             counter_start: Some(1),
             counter_padding: Some(0),
-            counter_position: "prefix".into(),
+            counter_position: CounterPositionArg::Prefix,
             ..default_args()
         };
         let rules = build_rules(&args).unwrap();

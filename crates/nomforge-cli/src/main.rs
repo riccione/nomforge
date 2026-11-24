@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
             // written to the undo log, and relative paths would later resolve
             // against whatever directory `undo` happens to run from.
             let dir = std::fs::canonicalize(&args.dir)
-                .with_context(|| format!("directory not found: {}", args.dir))?;
+                .with_context(|| format!("directory not found: {}", args.dir.display()))?;
 
             // Scan files
             let (files, warnings) = nomforge_core::scan_files_with_warnings(&dir, &scan_options)?;
@@ -55,8 +55,7 @@ fn main() -> anyhow::Result<()> {
                 if !args.no_undo {
                     let history_path = args
                         .history_file
-                        .as_deref()
-                        .map(std::path::PathBuf::from)
+                        .clone()
                         .unwrap_or_else(nomforge_core::default_undo_log_path);
                     nomforge_core::log_renames(&history_path, &results)?;
                     if args.verbose {

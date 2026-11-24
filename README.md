@@ -239,7 +239,7 @@ Additional safeguards:
 | `--counter-start` | | Counter starting value (default: `1`) |
 | `--counter-padding` | | Zero-padding width (default: `0`, maximum: `32`) |
 | `--counter-position` | | Counter position: `prefix`, `suffix`, or `replace` (default: `prefix`) |
-| `--ext` | `-e` | Filter by file extension (repeatable) |
+| `--ext` | `-e` | Filter by file extension (repeatable or comma-separated) |
 | `--include` | `-i` | Include only filenames matching a regex |
 | `--exclude` | | Exclude filenames matching a regex |
 | `--recursive` | `-R` | Scan subdirectories recursively |
