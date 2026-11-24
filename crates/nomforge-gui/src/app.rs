@@ -3,9 +3,12 @@ use std::path::PathBuf;
 use eframe::egui;
 use nomforge_core::{RenameRule, ScanOptions};
 
-use crate::job::{self, Job, JobOutcome};
+use crate::job::{self, Job, JobOutcome, ScanRequest};
 use crate::panels::folder_picker::DirPick;
-use crate::state::State;
+use crate::state::{ScanCache, State};
+
+/// Debounce before a live preview refresh, in seconds.
+const LIVE_PREVIEW_DEBOUNCE: f64 = 0.3;
 
 /// Suffix noting entries that could not be read during a scan.
 fn skipped_suffix(count: usize) -> String {
@@ -39,6 +42,7 @@ impl eframe::App for NomforgeApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_job(ui.ctx());
+        let now = ui.input(|i| i.time);
 
         ui.horizontal(|ui| {
             ui.heading(format!("nomforge v{}", { env!("CARGO_PKG_VERSION") }));
@@ -57,34 +61,48 @@ impl eframe::App for NomforgeApp {
         ui.separator();
 
         // Rules section
-        let mut preview_requested = crate::panels::rule_builder::show(ui, &mut self.state);
+        let rules_output = crate::panels::rule_builder::show(ui, &mut self.state);
+        let mut submitted = rules_output.submitted;
+        let mut changed = rules_output.changed;
 
         // Filtering section
         ui.collapsing("Filtering", |ui| {
             ui.horizontal(|ui| {
                 ui.label("Filter by extension:");
                 let response = ui.text_edit_singleline(&mut self.state.filter_ext);
-                preview_requested |= crate::panels::submitted(ui, &response);
+                submitted |= crate::panels::submitted(ui, &response);
+                changed |= response.changed();
             });
             ui.horizontal(|ui| {
                 ui.label("Include pattern:");
                 let response = ui.text_edit_singleline(&mut self.state.include);
-                preview_requested |= crate::panels::submitted(ui, &response);
+                submitted |= crate::panels::submitted(ui, &response);
+                changed |= response.changed();
             });
             ui.horizontal(|ui| {
                 ui.label("Exclude pattern:");
                 let response = ui.text_edit_singleline(&mut self.state.exclude);
-                preview_requested |= crate::panels::submitted(ui, &response);
+                submitted |= crate::panels::submitted(ui, &response);
+                changed |= response.changed();
             });
-            ui.checkbox(&mut self.state.recursive, "Recursive");
-            ui.checkbox(
-                &mut self.state.hidden,
-                "Include hidden files and directories",
-            );
+            changed |= ui
+                .checkbox(&mut self.state.recursive, "Recursive")
+                .changed();
+            changed |= ui
+                .checkbox(
+                    &mut self.state.hidden,
+                    "Include hidden files and directories",
+                )
+                .changed();
         });
 
-        // Enter in any rule or filter field refreshes the preview.
-        self.preview_on_submit(ui.ctx(), preview_requested);
+        // Enter in any rule or filter field refreshes the preview immediately;
+        // other edits schedule a debounced live preview.
+        self.preview_on_submit(ui.ctx(), submitted);
+        if !submitted {
+            self.note_live_edit(changed, now);
+        }
+        self.live_preview_tick(ui.ctx(), now);
 
         // Undo settings
         ui.collapsing("Undo", |ui| {
@@ -206,6 +224,76 @@ impl NomforgeApp {
         }
     }
 
+    /// Debounce a live preview after a rule or filter edit.
+    fn note_live_edit(&mut self, changed: bool, now: f64) {
+        if changed && self.state.settings.live_preview {
+            self.state.live_preview_at = Some(now + LIVE_PREVIEW_DEBOUNCE);
+        }
+    }
+
+    /// Run a due live preview, or request a repaint when it is not due yet.
+    fn live_preview_tick(&mut self, ctx: &egui::Context, now: f64) {
+        let Some(at) = self.state.live_preview_at else {
+            return;
+        };
+
+        if !self.state.settings.live_preview {
+            self.state.live_preview_at = None;
+            return;
+        }
+
+        if now < at {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(at - now));
+            return;
+        }
+
+        if self.is_busy() {
+            // The running job's completion repaint re-checks this deadline.
+            return;
+        }
+
+        self.state.live_preview_at = None;
+        self.preview_live(ctx);
+    }
+
+    /// Preview from the cached scan when only the rules changed.
+    fn preview_live(&mut self, ctx: &egui::Context) {
+        if self.is_busy() {
+            return;
+        }
+
+        // Never surface path errors while the user is typing a directory.
+        let Some(dir) = std::fs::canonicalize(&self.state.dir).ok() else {
+            return;
+        };
+        let options = self.state.build_scan_options();
+        let cached = self
+            .state
+            .scan_cache
+            .as_ref()
+            .filter(|cache| cache.dir == dir && cache.options == options)
+            .map(|cache| (cache.files.clone(), cache.skipped));
+
+        let rules = match self.state.build_rules() {
+            Ok(rules) => rules,
+            Err(e) => {
+                self.state.status = format!("Rule error: {e}");
+                return;
+            }
+        };
+
+        match cached {
+            Some((files, skipped)) => {
+                self.state.reset_output();
+                self.state.status = "Planning\u{2026}".into();
+                self.spawn(ctx, move || {
+                    JobOutcome::Preview(job::preview_files(files, rules, skipped))
+                });
+            }
+            None => self.preview(ctx),
+        }
+    }
+
     /// Whether a background job is currently running.
     fn is_busy(&self) -> bool {
         self.state.job.is_some()
@@ -254,22 +342,35 @@ impl NomforgeApp {
     }
 
     fn scan_files(&mut self, ctx: &egui::Context) {
+        self.state.live_preview_at = None;
         let Some((dir, options)) = self.prepare_scan(Some("Scanning\u{2026}")) else {
             return;
         };
-        self.spawn(ctx, move || JobOutcome::Scan(job::scan(&dir, &options)));
+        let scan = ScanRequest {
+            dir: dir.clone(),
+            options: options.clone(),
+        };
+        self.spawn_with(ctx, false, Some(scan), move || {
+            JobOutcome::Scan(job::scan(&dir, &options))
+        });
     }
 
     fn preview(&mut self, ctx: &egui::Context) {
+        self.state.live_preview_at = None;
         let Some(work) = self.prepare_plan(Some("Planning\u{2026}")) else {
             return;
         };
-        self.spawn(ctx, move || {
+        let scan = ScanRequest {
+            dir: work.dir.clone(),
+            options: work.options.clone(),
+        };
+        self.spawn_with(ctx, false, Some(scan), move || {
             JobOutcome::Preview(job::preview(&work.dir, &work.options, work.rules))
         });
     }
 
     fn apply(&mut self, ctx: &egui::Context) {
+        self.state.live_preview_at = None;
         let Some(work) = self.prepare_plan(Some("Applying\u{2026}")) else {
             return;
         };
@@ -290,7 +391,11 @@ impl NomforgeApp {
             self.state.status = undo_status;
             return;
         };
-        self.spawn_quiet(ctx, move || {
+        let scan = ScanRequest {
+            dir: work.dir.clone(),
+            options: work.options.clone(),
+        };
+        self.spawn_with(ctx, true, Some(scan), move || {
             JobOutcome::Preview(job::preview(&work.dir, &work.options, work.rules))
         });
     }
@@ -299,6 +404,7 @@ impl NomforgeApp {
         if self.is_busy() {
             return;
         }
+        self.state.live_preview_at = None;
 
         let history = self.history_path();
         self.state.status = "Undoing\u{2026}".into();
@@ -328,6 +434,7 @@ impl NomforgeApp {
         if self.is_busy() {
             return;
         }
+        self.state.live_preview_at = None;
 
         let history = self.undo_log_target();
         self.state.status = "Applying\u{2026}".into();
@@ -341,20 +448,16 @@ impl NomforgeApp {
     where
         F: FnOnce() -> JobOutcome + Send + 'static,
     {
-        self.spawn_with(ctx, false, work);
+        self.spawn_with(ctx, false, None, work);
     }
 
-    /// Like [`Self::spawn`], but leaves the current status message untouched
-    /// when a successful preview result arrives.
-    fn spawn_quiet<F>(&mut self, ctx: &egui::Context, work: F)
-    where
-        F: FnOnce() -> JobOutcome + Send + 'static,
-    {
-        self.spawn_with(ctx, true, work);
-    }
-
-    fn spawn_with<F>(&mut self, ctx: &egui::Context, keep_status: bool, work: F)
-    where
+    fn spawn_with<F>(
+        &mut self,
+        ctx: &egui::Context,
+        keep_status: bool,
+        scan: Option<ScanRequest>,
+        work: F,
+    ) where
         F: FnOnce() -> JobOutcome + Send + 'static,
     {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -363,7 +466,11 @@ impl NomforgeApp {
             let _ = tx.send(work());
             ctx.request_repaint();
         });
-        self.state.job = Some(Job { rx, keep_status });
+        self.state.job = Some(Job {
+            rx,
+            keep_status,
+            scan,
+        });
     }
 
     /// Pick up the outcome of a finished background job, if any.
@@ -383,16 +490,31 @@ impl NomforgeApp {
         };
 
         let keep_status = job.keep_status;
+        let scan = job.scan.clone();
         self.state.job = None;
-        self.finish(outcome, ctx, keep_status);
+        self.finish(outcome, ctx, keep_status, scan);
     }
 
     /// Apply a finished job's outcome to the UI state.
-    fn finish(&mut self, outcome: JobOutcome, ctx: &egui::Context, keep_status: bool) {
+    fn finish(
+        &mut self,
+        outcome: JobOutcome,
+        ctx: &egui::Context,
+        keep_status: bool,
+        scan: Option<ScanRequest>,
+    ) {
         match outcome {
             JobOutcome::Scan(Ok((files, skipped))) => {
                 self.state.status =
                     format!("Found {} file(s){}", files.len(), skipped_suffix(skipped));
+                if let Some(scan) = scan {
+                    self.state.scan_cache = Some(ScanCache {
+                        dir: scan.dir,
+                        options: scan.options,
+                        files: files.clone(),
+                        skipped,
+                    });
+                }
                 self.state.files = files.clone();
 
                 // Switch to the preview screen by planning the scanned files,
@@ -406,8 +528,21 @@ impl NomforgeApp {
                     Err(e) => self.state.status = format!("Rule error: {e}"),
                 }
             }
-            JobOutcome::Scan(Err(message)) => self.state.status = message,
+            JobOutcome::Scan(Err(message)) => {
+                if scan.is_some() {
+                    self.state.scan_cache = None;
+                }
+                self.state.status = message;
+            }
             JobOutcome::Preview(Ok(data)) => {
+                if let Some(scan) = scan {
+                    self.state.scan_cache = Some(ScanCache {
+                        dir: scan.dir,
+                        options: scan.options,
+                        files: data.files,
+                        skipped: data.skipped,
+                    });
+                }
                 if data.plans.is_empty() {
                     if !keep_status {
                         self.state.status = "No files found".into();
@@ -424,8 +559,15 @@ impl NomforgeApp {
                 self.state.pending_conflicts = data.conflicts;
                 self.state.plans = data.plans;
             }
-            JobOutcome::Preview(Err(message)) => self.state.status = message,
+            JobOutcome::Preview(Err(message)) => {
+                if scan.is_some() {
+                    self.state.scan_cache = None;
+                }
+                self.state.status = message;
+            }
             JobOutcome::Apply(Ok(data)) => {
+                // Files changed on disk; the cached scan is no longer valid.
+                self.state.scan_cache = None;
                 if data.plans.is_empty() {
                     self.state.status = "No files found".into();
                     return;
@@ -457,6 +599,7 @@ impl NomforgeApp {
             }
             JobOutcome::Apply(Err(message)) => self.state.status = message,
             JobOutcome::Undo(Ok((reverted, skipped))) => {
+                self.state.scan_cache = None;
                 self.state.status = if skipped > 0 {
                     format!("Reverted {reverted} file(s), skipped {skipped} existing")
                 } else {
@@ -474,7 +617,7 @@ impl NomforgeApp {
     fn wait_for_job(&mut self, ctx: &egui::Context) {
         let job = self.state.job.take().expect("no job to wait for");
         let outcome = job.rx.recv().expect("job thread dropped");
-        self.finish(outcome, ctx, job.keep_status);
+        self.finish(outcome, ctx, job.keep_status, job.scan);
     }
 
     fn show_conflict_modal(&mut self, ui: &mut egui::Ui) {
@@ -831,6 +974,136 @@ mod tests {
         app.wait_for_job(&ctx); // scan
         app.wait_for_job(&ctx); // automatic preview
         assert_eq!(app.state.plans.len(), 1);
+    }
+
+    #[test]
+    fn live_preview_uses_cached_scan_for_rule_changes() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.prefix = "x_".into();
+
+        // Prime the cache via scan (scan -> chained preview).
+        app.scan_files(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
+        assert!(app.state.scan_cache.is_some());
+
+        // The file disappears, but a rule-only live preview reuses the scan.
+        fs::remove_file(dir.join("a.txt")).unwrap();
+        app.note_live_edit(true, 0.0);
+        assert_eq!(app.state.live_preview_at, Some(0.3));
+
+        app.live_preview_tick(&ctx, 0.2);
+        assert!(app.state.job.is_none(), "must wait for the debounce");
+
+        app.live_preview_tick(&ctx, 0.3);
+        assert!(app.state.job.is_some());
+        app.wait_for_job(&ctx);
+
+        assert_eq!(app.state.plans.len(), 1);
+        assert_eq!(app.state.plans[0].target.file_name().unwrap(), "x_a.txt");
+    }
+
+    #[test]
+    fn live_preview_rescans_when_filters_change() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.prefix = "x_".into();
+        app.scan_files(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
+
+        // A filter change invalidates the cached scan signature.
+        fs::remove_file(dir.join("a.txt")).unwrap();
+        app.state.filter_ext = "jpg".into();
+        app.note_live_edit(true, 1.0);
+        app.live_preview_tick(&ctx, 1.3);
+        assert!(app.state.job.is_some());
+        app.wait_for_job(&ctx);
+
+        assert!(app.state.plans.is_empty());
+        assert_eq!(app.state.status, "No files found");
+        assert_eq!(
+            app.state.scan_cache.as_ref().map(|cache| cache.files.len()),
+            Some(0),
+            "rescan refreshes the cache"
+        );
+    }
+
+    #[test]
+    fn live_preview_disabled_ignores_changes() {
+        let mut app = NomforgeApp::default();
+        app.state.settings.live_preview = false;
+
+        app.note_live_edit(true, 0.0);
+        assert!(app.state.live_preview_at.is_none());
+    }
+
+    #[test]
+    fn live_preview_waits_for_running_job() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.prefix = "x_".into();
+
+        // A dummy job keeps the scheduler busy.
+        let (_tx, rx) = std::sync::mpsc::channel();
+        app.state.job = Some(Job {
+            rx,
+            keep_status: false,
+            scan: None,
+        });
+
+        app.note_live_edit(true, 0.0);
+        app.live_preview_tick(&ctx, 1.0);
+        assert!(app.state.job.is_some(), "did not replace the running job");
+        assert!(
+            app.state.live_preview_at.is_some(),
+            "deadline must be kept while busy"
+        );
+
+        // Once idle, the deadline fires.
+        app.state.job = None;
+        app.live_preview_tick(&ctx, 1.0);
+        assert!(app.state.job.is_some());
+        app.wait_for_job(&ctx);
+        assert_eq!(app.state.plans.len(), 1);
+    }
+
+    #[test]
+    fn apply_invalidates_scan_cache() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        let ctx = egui::Context::default();
+
+        let mut app = NomforgeApp::default();
+        app.state.dir = dir.to_string_lossy().into_owned();
+        app.state.prefix = "x_".into();
+        app.scan_files(&ctx);
+        app.wait_for_job(&ctx); // scan
+        app.wait_for_job(&ctx); // automatic preview
+        assert!(app.state.scan_cache.is_some());
+
+        let plans = app.state.plans.clone();
+        app.spawn_confirmed_apply(plans, &ctx);
+        app.wait_for_job(&ctx);
+
+        assert!(app.state.scan_cache.is_none());
     }
 
     #[test]

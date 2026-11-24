@@ -15,6 +15,7 @@ use nomforge_core::{
 pub struct PreviewData {
     pub plans: Vec<RenamePlan>,
     pub conflicts: Vec<Conflict>,
+    pub files: Vec<PathBuf>,
     pub skipped: usize,
 }
 
@@ -35,11 +36,20 @@ pub enum JobOutcome {
     Undo(Result<(usize, usize), String>),
 }
 
+/// Scan parameters for a job, used to cache the scanned file list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScanRequest {
+    pub dir: PathBuf,
+    pub options: ScanOptions,
+}
+
 /// Handle to a running background job.
 pub struct Job {
     pub rx: Receiver<JobOutcome>,
     /// Keep the status message that was set before this job started.
     pub keep_status: bool,
+    /// Scan performed by this job, if any.
+    pub scan: Option<ScanRequest>,
 }
 
 /// Scan `dir`, returning the files and the number of unreadable entries skipped.
@@ -71,6 +81,7 @@ pub fn preview_files(
         return Ok(PreviewData {
             plans: Vec::new(),
             conflicts: Vec::new(),
+            files,
             skipped,
         });
     }
@@ -84,6 +95,7 @@ pub fn preview_files(
     Ok(PreviewData {
         plans,
         conflicts,
+        files,
         skipped,
     })
 }

@@ -29,7 +29,7 @@ undo previous operations when needed.
   scan recursively, and optionally include hidden files and directories.
 - **Smart filename handling:** automatically truncate filenames exceeding OS
   limits and disambiguate existing targets with `_1`, `_2`, etc.
-- **GUI preferences:** light, dark, and system themes, adjustable font size, and automatic scan-and-preview on folder selection. Settings are applied live and persisted between runs.
+- **GUI preferences:** light, dark, and system themes, adjustable font size, automatic scan-and-preview on folder selection, and live preview while typing rules or filters. Settings are applied live and persisted between runs.
 - **GUI shortcut:** press Enter in any rule or filter field (or the directory field) to refresh the preview without clicking the button.
 
 ## Installation
